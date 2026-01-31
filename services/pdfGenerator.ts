@@ -11,20 +11,9 @@ const convertGroup = (n: number): string => {
     const h = Math.floor(n / 100);
     const t = Math.floor((n % 100) / 10);
     const u = n % 10;
-
-    if (h > 0) {
-        if (h === 1) output += 'cento';
-        else output += units[h] + 'cento';
-    }
-
-    if (t === 1) {
-        output += teens[u];
-    } else {
-        if (t > 1) {
-            let tenStr = tens[t];
-            if (u === 1 || u === 8) tenStr = tenStr.substring(0, tenStr.length - 1);
-            output += tenStr;
-        }
+    if (h > 0) { if (h === 1) output += 'cento'; else output += units[h] + 'cento'; }
+    if (t === 1) { output += teens[u]; } else {
+        if (t > 1) { let tenStr = tens[t]; if (u === 1 || u === 8) tenStr = tenStr.substring(0, tenStr.length - 1); output += tenStr; }
         if (u > 0 && t !== 1) output += units[u];
     }
     return output;
@@ -35,23 +24,25 @@ const numberToItalianWords = (num: number): string => {
     const integerPart = Math.floor(num);
     const decimalPart = Math.round((num - integerPart) * 100);
     let words = '';
-    
-    if (integerPart >= 1000000) return "Valore troppo alto"; 
-
+    if (integerPart >= 1000000) return "Valore fuori scala"; 
     if (integerPart >= 1000) {
         const thousands = Math.floor(integerPart / 1000);
         const remainder = integerPart % 1000;
-        if (thousands === 1) words += 'mille';
-        else words += convertGroup(thousands) + 'mila';
+        if (thousands === 1) words += 'mille'; else words += convertGroup(thousands) + 'mila';
         if (remainder > 0) words += convertGroup(remainder);
-    } else {
-        words += convertGroup(integerPart);
-    }
+    } else { words += convertGroup(integerPart); }
     words = words.charAt(0).toUpperCase() + words.slice(1);
     return `${words}/${decimalPart.toString().padStart(2, '0')}`;
 };
 
-// --- FORMATTERS ---
+const getWbsNumber = (code: string) => {
+    const match = code.match(/WBS\.(\d+)/);
+    if (match) return parseInt(match[1], 10);
+    const sMatch = code.match(/S\.(\d+)/);
+    if (sMatch) return parseInt(sMatch[1], 10);
+    return code;
+};
+
 const formatCurrency = (val: number | undefined | null) => {
   if (val === undefined || val === null) return '';
   return new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
@@ -62,7 +53,6 @@ const formatNumber = (val: number | undefined | null) => {
   return new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 };
 
-// Internal logic to calculate single measurement row value
 const calculateMeasurementValue = (m: Measurement, linkedVal: number = 0) => {
     if (m.type === 'subtotal') return 0;
     if (m.linkedArticleId) {
@@ -72,18 +62,12 @@ const calculateMeasurementValue = (m: Measurement, linkedVal: number = 0) => {
     }
     const factors = [m.length, m.width, m.height].filter(v => v !== undefined && v !== 0 && v !== null);
     const base = factors.length > 0 ? factors.reduce((a, b) => (a || 1) * (b || 1), 1) : 0;
-    let effectiveMultiplier = 0;
-    if (m.multiplier !== undefined) {
-        effectiveMultiplier = m.multiplier;
-    } else {
-        if (factors.length > 0) effectiveMultiplier = 1;
-    }
+    let effectiveMultiplier = (m.multiplier !== undefined) ? m.multiplier : (factors.length > 0 ? 1 : 0);
     const effectiveBase = (factors.length === 0 && effectiveMultiplier !== 0) ? 1 : base;
     const val = effectiveBase * effectiveMultiplier;
     return m.type === 'deduction' ? -val : val;
 };
 
-// --- COMMON SETUP (Dynamic Import) ---
 const getLibs = async () => {
     const jsPDFModule = await import('jspdf');
     const jsPDF = (jsPDFModule as any).jsPDF || (jsPDFModule as any).default || jsPDFModule;
@@ -92,522 +76,289 @@ const getLibs = async () => {
     return { jsPDF, autoTable };
 };
 
-const drawHeader = (doc: any, projectInfo: ProjectInfo, title: string, pageNumber: number, grandTotal?: number, pageWidth?: number, pageHeight?: number, isTotalCurrency: boolean = true) => {
-    doc.setTextColor(0,0,0);
-    if (pageNumber === 1) {
-        doc.setFontSize(14);
-        doc.text(title, (pageWidth || 210) / 2, 15, { align: 'center' });
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.text(projectInfo.title, 10, 22);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.text(`Committente: ${projectInfo.client}`, 10, 27);
-        doc.text(`Data: ${projectInfo.date}`, 10, 31);
-        doc.text(`Prezzario: ${projectInfo.region} ${projectInfo.year}`, 10, 35);
-    } else {
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.text(projectInfo.title, 10, 20);
+const drawGridLines = (doc: any, startY: number, endY: number) => {
+    const boundaries = [10, 20, 42, 102, 112, 124, 136, 148, 166, 184, 200];
+    for (let i = 1; i < boundaries.length - 1; i++) { 
+        if (i === 7) {
+            doc.setDrawColor(140, 140, 140); doc.setLineWidth(0.3);
+        } else {
+            doc.setDrawColor(190, 190, 190); doc.setLineWidth(0.15);
+        }
+        doc.line(boundaries[i], startY, boundaries[i], endY); 
     }
-    if (pageNumber > 1 && grandTotal !== undefined) {
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.text("RIPORTO:", 160, 28, { align: 'right' });
-        doc.text(isTotalCurrency ? formatCurrency(grandTotal) : formatNumber(grandTotal), 200, 28, { align: 'right' });
+    doc.setLineWidth(0.1);
+};
+
+const drawTableFrame = (doc: any, startY: number, endY: number) => {
+    doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.4);
+    doc.line(10, startY, 10, endY); doc.line(200, startY, 200, endY); 
+    doc.line(10, endY, 200, endY); doc.line(10, startY, 200, startY); 
+    doc.setLineWidth(0.1);
+};
+
+const drawHeader = (doc: any, projectInfo: ProjectInfo, title: string, pageNumber: number, grandTotal?: number, isTotalCurrency: boolean = true) => {
+    doc.setTextColor(0, 0, 0);
+    if (pageNumber === 1) {
+        doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(title, 105, 18, { align: 'center' });
+        doc.setFontSize(10); doc.text(projectInfo.title, 12, 28);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+        doc.text(`Committente: ${projectInfo.client}`, 12, 33);
+        doc.text(`Progettista: ${projectInfo.designer}`, 12, 37);
+        doc.text(`Listino: ${projectInfo.region} ${projectInfo.year}`, 12, 41);
+        doc.setLineWidth(0.3); doc.line(10, 44, 200, 44);
+    } else {
+        doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text(projectInfo.title, 12, 15);
+        if (grandTotal !== undefined) {
+            doc.setFontSize(7.5); doc.text("RIPORTO PAGINA PRECEDENTE:  ", 160, 22, { align: 'right' });
+            doc.text(isTotalCurrency ? formatCurrency(grandTotal) : formatNumber(grandTotal), 198, 22, { align: 'right' });
+            doc.line(130, 23, 200, 23);
+        }
     }
 };
 
-const drawFooter = (doc: any, pageNumber: number, grandTotal: number | undefined, pageTotal: number | undefined, pageWidth: number, pageHeight: number, isTotalCurrency: boolean = true) => {
-    const footerY = pageHeight - 15;
+const drawFooter = (doc: any, pageNumber: number, grandTotal: number | undefined, pageTotal: number | undefined, isTotalCurrency: boolean = true) => {
+    const pageHeight = doc.internal.pageSize.height;
     if (grandTotal !== undefined && pageTotal !== undefined) {
         const currentCumulative = grandTotal + pageTotal;
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.text("A RIPORTARE:", 160, footerY, { align: 'right' });
-        doc.text(isTotalCurrency ? formatCurrency(currentCumulative) : formatNumber(currentCumulative), 200, footerY, { align: 'right' });
+        doc.setFontSize(7.5); doc.setFont("helvetica", "bold");
+        doc.text("TOTALE DA RIPORTARE:  ", 160, pageHeight - 20, { align: 'right' });
+        doc.text(isTotalCurrency ? formatCurrency(currentCumulative) : formatNumber(currentCumulative), 198, pageHeight - 20, { align: 'right' });
+        doc.line(130, pageHeight - 18.5, 200, pageHeight - 18.5);
     }
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Pag. ${pageNumber}`, pageWidth / 2, footerY + 5, { align: 'center' });
+    doc.setFontSize(7); doc.setFont("helvetica", "normal");
+    doc.text(`Pagina ${pageNumber}`, 105, pageHeight - 6, { align: 'center' });
 };
 
-// --------------------------------------------------------------------------------
-// 1. COMPUTO METRICO ESTIMATIVO (Standard)
-// --------------------------------------------------------------------------------
+const drawSignature = (doc: any, projectInfo: ProjectInfo, yPos: number) => {
+    const pageHeight = doc.internal.pageSize.height;
+    let finalY = yPos + 15;
+    if (finalY > pageHeight - 60) { doc.addPage(); finalY = 30; }
+    doc.setFontSize(8); doc.text(`${projectInfo.location}, ${projectInfo.date}`, 46, finalY);
+    doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text("IL PROGETTISTA", 72, finalY + 12, { align: 'center' });
+    doc.setFont("helvetica", "normal"); doc.text(projectInfo.designer, 72, finalY + 19, { align: 'center' });
+    return finalY + 30;
+};
+
 export const generateComputoMetricPdf = async (projectInfo: ProjectInfo, categories: Category[], articles: Article[]) => {
   try {
     const { jsPDF, autoTable } = await getLibs();
     const doc = new jsPDF();
     const tableBody: any[] = [];
+    const pageHeight = doc.internal.pageSize.height;
 
-    categories.forEach((cat) => {
-        if (!cat.isEnabled) return;
-        const catArticles = articles.filter(a => a.categoryCode === cat.code);
-        if (catArticles.length === 0) return;
+    tableBody.push([{ content: '', colSpan: 10, styles: { minCellHeight: 10, lineWidth: 0, fillColor: [255, 255, 255] } }]);
 
-        tableBody.push([{ content: `${cat.code} - ${cat.name}`, colSpan: 10, styles: { fillColor: [230, 230, 230], fontStyle: 'bold', textColor: [0,0,0], halign: 'left' } }]);
+    // SCANSIONE GERARCHICA RIGOROSA
+    const topLevels = categories.filter(c => !c.parentId);
+    
+    topLevels.forEach(root => {
+        // Se la root stessa è disattivata, salta tutto il blocco
+        if (root.isEnabled === false) return;
 
-        catArticles.forEach((art, artIndex) => {
-            const wbsNum = cat.code.match(/WBS\.(\d+)/)?.[1] || cat.code;
-            const artNum = `${parseInt(wbsNum, 10)}.${artIndex + 1}`;
-
+        // Se è una super categoria, stampiamo il titolo di sezione
+        if (root.isSuperCategory) {
             tableBody.push([
-                { content: artNum, styles: { fontStyle: 'bold', halign: 'center', valign: 'top' } },
-                { content: art.code, styles: { fontStyle: 'bold', valign: 'top' } },
-                { content: art.description, styles: { fontStyle: 'normal', halign: 'justify', valign: 'top' } },
-                '', '', '', '', '', '', '' 
+                { content: '', colSpan: 2, styles: { lineWidth: 0 } },
+                { content: `AREA DI INTERVENTO: ${root.name.toUpperCase()}`, colSpan: 8, styles: { fillColor: [44, 62, 80], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', cellPadding: 3, isSuper: true } }
             ]);
-
-            tableBody.push([ '', '', { content: 'ELENCO DELLE MISURE:', styles: { fontStyle: 'bold', fontSize: 7, textColor: [80, 80, 80], cellPadding: { bottom: 0, top: 1, left: 3 } } }, '', '', '', '', '', '', '' ]);
-
-            let runningPartial = 0;
-            art.measurements.forEach(m => {
-                let val = 0;
-                let linkedDesc = '';
-                if (m.linkedArticleId) {
-                    const linkedArt = articles.find(a => a.id === m.linkedArticleId);
-                    if (linkedArt) {
-                        const base = m.linkedType === 'amount' ? (linkedArt.quantity * linkedArt.unitPrice) : linkedArt.quantity;
-                        val = calculateMeasurementValue(m, base);
-                        linkedDesc = ` (Vedi: ${linkedArt.code})`;
-                    }
-                } else {
-                    val = calculateMeasurementValue(m);
-                }
-                let displayVal = val;
-                if (m.type === 'subtotal') {
-                    displayVal = runningPartial;
-                    runningPartial = 0;
-                } else {
-                    runningPartial += val;
-                }
-                tableBody.push([
-                    '', '', 
-                    { content: m.type === 'subtotal' ? 'Sommano parziale' : (m.description + linkedDesc), styles: m.type === 'subtotal' ? { fontStyle: 'bold', halign: 'right' } : (m.type === 'deduction' ? { textColor: [200, 0, 0] } : {}) },
-                    formatNumber(m.multiplier), formatNumber(m.length), formatNumber(m.width), formatNumber(m.height),
-                    { content: formatNumber(displayVal), styles: { halign: 'right', fontStyle: m.type === 'subtotal' ? 'bold' : 'normal', fillColor: m.type === 'subtotal' ? [255, 253, 208] : false } },
-                    '', ''
-                ]);
+            
+            // Troviamo le WBS figlie in ordine
+            const children = categories.filter(c => c.parentId === root.code && !c.isSuperCategory);
+            children.forEach(child => {
+                if (child.isEnabled === false) return;
+                appendWbsToPdfBody(tableBody, child, articles);
             });
-
-            const totalAmount = art.quantity * art.unitPrice;
-            tableBody.push([
-                '', '', { content: `SOMMANO ${art.unit}`, styles: { fontStyle: 'bold', halign: 'right' } },
-                '', '', '', '',
-                { content: formatNumber(art.quantity), styles: { fontStyle: 'bold', halign: 'right', lineWidth: { top: 0.1 }, lineColor: [0,0,0] } },
-                { content: formatNumber(art.unitPrice), styles: { halign: 'right' } },
-                { content: totalAmount, styles: { fontStyle: 'bold', halign: 'right', textColor: [0, 0, 150] } } 
-            ]);
-        });
+        } else {
+            // Se è una WBS standalone (top-level)
+            appendWbsToPdfBody(tableBody, root, articles);
+        }
     });
 
-    let grandTotal = 0; 
-    let pageTotal = 0;  
-
+    let grandTotal = 0; let pageTotal = 0;  
     autoTable(doc, {
       head: [['Num.Ord', 'TARIFFA', 'DESIGNAZIONE DEI LAVORI', 'par.ug.', 'lung.', 'larg.', 'H/peso', 'Quantità', 'unitario', 'TOTALE']],
       body: tableBody,
-      startY: 40,
-      margin: { top: 35, bottom: 30, left: 10, right: 10 }, 
-      theme: 'grid',
-      styles: { fontSize: 8, valign: 'top', cellPadding: 1, lineColor: [200,200,200], lineWidth: 0.1, overflow: 'linebreak' },
-      columnStyles: {
+      startY: 44, 
+      margin: { top: 25, bottom: 25, left: 10, right: 10 }, 
+      theme: 'plain', 
+      styles: { fontSize: 8, valign: 'top', cellPadding: 1.2, lineWidth: 0, overflow: 'linebreak', font: 'helvetica' },
+      columnStyles: { 
           0: { cellWidth: 10, halign: 'center' }, 
           1: { cellWidth: 22 }, 
-          2: { cellWidth: 'auto', cellPadding: { top: 1, bottom: 1, left: 3, right: 3 } }, 
-          3: { cellWidth: 10, halign: 'center' }, 
-          4: { cellWidth: 12, halign: 'center' }, 
-          5: { cellWidth: 12, halign: 'center' }, 
-          6: { cellWidth: 12, halign: 'center' }, 
-          7: { cellWidth: 18, halign: 'right' }, 
-          8: { cellWidth: 18, halign: 'right' }, 
-          9: { cellWidth: 22, halign: 'right' }  
+          2: { cellWidth: 60 }, 
+          3: { cellWidth: 10, halign: 'left' }, 
+          4: { cellWidth: 12, halign: 'left' }, 
+          5: { cellWidth: 12, halign: 'left' }, 
+          6: { cellWidth: 12, halign: 'left' }, 
+          7: { cellWidth: 18, halign: 'left' }, 
+          8: { cellWidth: 18, halign: 'left' }, 
+          9: { cellWidth: 16, halign: 'left' } 
       },
-      headStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], lineWidth: 0.1, lineColor: [100,100,100] },
+      headStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'center', lineWidth: { bottom: 0.5 }, lineColor: [0,0,0] },
       didDrawCell: (data: any) => {
+          if (data.section === 'body' && data.cell.styles.isTotalRow && data.column.index === 7) {
+              doc.setDrawColor(150, 150, 150); 
+              const leftPadding = 1.5; const xStart = data.cell.x + leftPadding; const xEnd = data.cell.x + data.cell.width;
+              doc.setLineWidth(0.15); doc.line(xStart, data.cell.y, xEnd, data.cell.y);
+              doc.setLineWidth(0.4); doc.line(xStart, data.cell.y + data.cell.height, xEnd, data.cell.y + data.cell.height);
+              doc.setLineWidth(0.15); doc.line(xStart, data.cell.y + data.cell.height + 0.6, xEnd, data.cell.y + data.cell.height + 0.6);
+              doc.setLineWidth(0.1); 
+          }
           if (data.section === 'body' && data.column.index === 9) {
-              const rawVal = data.cell.raw;
-              if (typeof rawVal === 'number' || (typeof rawVal === 'object' && (rawVal as any).content && typeof (rawVal as any).content === 'number')) {
-                  const val = typeof rawVal === 'number' ? rawVal : (rawVal as any).content;
-                  pageTotal += val;
-              }
+              const raw = data.cell.raw;
+              if (typeof raw === 'number') pageTotal += raw; else if (raw?.content && typeof raw.content === 'number') pageTotal += raw.content;
           }
       },
       didParseCell: (data: any) => {
           if (data.section === 'body' && data.column.index === 9) {
-               const rawVal = data.cell.raw;
-               if (typeof rawVal === 'object' && typeof (rawVal as any).content === 'number') {
-                   data.cell.text = [formatCurrency((rawVal as any).content)];
-               }
+               const raw = data.cell.raw;
+               if (typeof raw === 'number') data.cell.text = [formatCurrency(raw)];
+               else if (raw?.content && typeof raw.content === 'number') data.cell.text = [formatCurrency(raw.content)];
           }
       },
       didDrawPage: (data: any) => {
-          drawHeader(doc, projectInfo, "COMPUTO METRICO ESTIMATIVO", data.pageNumber, grandTotal, doc.internal.pageSize.width);
-          drawFooter(doc, data.pageNumber, grandTotal, pageTotal, doc.internal.pageSize.width, doc.internal.pageSize.height);
-          grandTotal += pageTotal;
-          pageTotal = 0;
+          const currentTableStartY = data.pageNumber === 1 ? 44 : 25; const tableEndY = pageHeight - 25;
+          drawHeader(doc, projectInfo, "COMPUTO METRICO ESTIMATIVO", data.pageNumber, grandTotal);
+          drawGridLines(doc, currentTableStartY, tableEndY); drawTableFrame(doc, currentTableStartY, tableEndY);
+          drawFooter(doc, data.pageNumber, grandTotal, pageTotal);
+          grandTotal += pageTotal; pageTotal = 0;
       }
     });
-
-    // Summary Page
-    doc.addPage();
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("RIEPILOGO GENERALE", 10, 20);
-    const summaryRows: any[] = [];
-    let totalWorks = 0;
-    categories.forEach(cat => {
-        if (!cat.isEnabled) return;
-        const catTotal = articles.filter(a => a.categoryCode === cat.code).reduce((sum, a) => sum + (a.quantity * a.unitPrice), 0);
-        if (catTotal > 0) {
-            totalWorks += catTotal;
-            summaryRows.push([cat.code, cat.name, formatCurrency(catTotal)]);
-        }
-    });
-    
-    const safetyCosts = totalWorks * (projectInfo.safetyRate / 100);
-    const taxable = totalWorks + safetyCosts;
-    const vat = taxable * (projectInfo.vatRate / 100);
-    const grandTotalValue = taxable + vat;
-
-    summaryRows.push(['', '', '']); 
-    summaryRows.push([{ content: 'Totale Lavori (a)', colSpan: 2, styles: { fontStyle: 'bold', halign: 'right' } }, { content: formatCurrency(totalWorks), styles: { fontStyle: 'bold', halign: 'right' } }]);
-    summaryRows.push([{ content: `Oneri Sicurezza (${projectInfo.safetyRate}%) (b)`, colSpan: 2, styles: { halign: 'right' } }, { content: formatCurrency(safetyCosts), styles: { halign: 'right' } }]);
-    summaryRows.push([{ content: 'Totale Imponibile (a+b)', colSpan: 2, styles: { fontStyle: 'bold', halign: 'right' } }, { content: formatCurrency(taxable), styles: { fontStyle: 'bold', halign: 'right' } }]);
-    summaryRows.push([{ content: `I.V.A. (${projectInfo.vatRate}%)`, colSpan: 2, styles: { halign: 'right' } }, { content: formatCurrency(vat), styles: { halign: 'right' } }]);
-    summaryRows.push([{ content: 'TOTALE GENERALE', colSpan: 2, styles: { fontStyle: 'bold', fontSize: 12, halign: 'center', fillColor: [230, 230, 230] } }, { content: formatCurrency(grandTotalValue), styles: { fontStyle: 'bold', fontSize: 12, halign: 'right', fillColor: [230, 230, 230] } }]);
-
-    autoTable(doc, {
-        head: [['Codice', 'Descrizione Capitolato', 'Importo (€)']],
-        body: summaryRows,
-        startY: 35,
-        theme: 'grid',
-        styles: { fontSize: 10, cellPadding: 2 },
-        columnStyles: { 0: { cellWidth: 30 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 40, halign: 'right' } },
-        headStyles: { fillColor: [50, 50, 50], textColor: [255, 255, 255], fontStyle: 'bold' }
-    });
-
-    doc.save(`${projectInfo.title.replace(/\s+/g, '_')}_Computo.pdf`);
-  } catch (error) {
-    console.error("PDF Error:", error);
-    alert("Errore generazione PDF.");
-  }
+    drawSignature(doc, projectInfo, (doc as any).lastAutoTable.finalY);
+    window.open(URL.createObjectURL(doc.output('blob')), '_blank');
+  } catch (error) { console.error(error); alert("Errore PDF."); }
 };
 
-// --------------------------------------------------------------------------------
-// 2. ELENCO PREZZI UNITARI
-// --------------------------------------------------------------------------------
+// Funzione di supporto per l'accodamento di una WBS e dei suoi articoli al corpo tabella
+const appendWbsToPdfBody = (tableBody: any[], cat: Category, articles: Article[]) => {
+    const catArticles = articles.filter(a => a.categoryCode === cat.code);
+    if (catArticles.length === 0) return;
+
+    const isSafety = cat.type === 'safety';
+    const fillColor = isSafety ? [255, 200, 150] : [240, 240, 240];
+    const textColor = [0, 0, 0];
+
+    tableBody.push([
+        { content: '', styles: { isWbs: true, lineWidth: 0 } }, 
+        { content: '', styles: { isWbs: true, lineWidth: 0 } }, 
+        { content: `${cat.code} - ${cat.name}`, styles: { fillColor, textColor, fontStyle: 'bold', halign: 'left', cellPadding: { left: 1, right: 1, top: 3, bottom: 3 }, isWbs: true, lineWidth: 0 } },
+        { content: '', styles: { isWbs: true, lineWidth: 0 } },
+        { content: '', styles: { isWbs: true, lineWidth: 0 } },
+        { content: '', styles: { isWbs: true, lineWidth: 0 } },
+        { content: '', styles: { isWbs: true, lineWidth: 0 } },
+        { content: '', styles: { isWbs: true, lineWidth: 0 } },
+        { content: '', styles: { isWbs: true, lineWidth: 0 } },
+        { content: '', styles: { isWbs: true, lineWidth: 0 } }
+    ]);
+
+    catArticles.forEach((art, artIndex) => {
+        const wbsN = getWbsNumber(cat.code);
+        const artNum = `${wbsN}.${artIndex + 1}`;
+        tableBody.push([
+            { content: artNum, styles: { isArt: true, fontStyle: 'bold', halign: 'center', cellPadding: { top: 3, bottom: 1 } } },
+            { content: art.code, styles: { isArt: true, fontStyle: 'bold', cellPadding: { top: 3, bottom: 1 } } },
+            { content: art.description, styles: { isArt: true, fontStyle: 'normal', halign: 'justify', cellPadding: { left: 1, right: 1, top: 3, bottom: 2 }, fontSize: 8.5, valign: 'top', textColor: isSafety ? [200, 80, 0] : [20, 20, 20] } },
+            '', '', '', '', '', '', ''
+        ]);
+        
+        let runningPartial = 0;
+        art.measurements.forEach(m => {
+            let val = 0;
+            if (m.linkedArticleId) {
+                const linkedArt = articles.find(a => a.id === m.linkedArticleId);
+                if (linkedArt) {
+                    const base = m.linkedType === 'amount' ? (linkedArt.quantity * linkedArt.unitPrice) : linkedArt.quantity;
+                    val = calculateMeasurementValue(m, base);
+                }
+            } else { val = calculateMeasurementValue(m); }
+            let displayVal = (m.type === 'subtotal') ? runningPartial : val;
+            if (m.type === 'subtotal') runningPartial = 0; else runningPartial += val;
+            tableBody.push([ '', '', { content: m.type === 'subtotal' ? 'Sommano parziali' : m.description, styles: { fontStyle: m.type === 'subtotal' ? 'bold' : 'normal', halign: m.type === 'subtotal' ? 'right' : 'left', textColor: m.type === 'deduction' ? [200, 0, 0] : [60, 60, 60], cellPadding: { left: m.type === 'subtotal' ? 1 : 2, top: 1, bottom: 1 }, fontSize: 8 } }, { content: formatNumber(m.multiplier), styles: { halign: 'left' } }, { content: formatNumber(m.length), styles: { halign: 'left' } }, { content: formatNumber(m.width), styles: { halign: 'left' } }, { content: formatNumber(m.height), styles: { halign: 'left' } }, { content: formatNumber(displayVal), styles: { halign: 'left', fontStyle: 'normal', cellPadding: { left: 1.5 }, fontSize: 8 } }, '', '' ]);
+        });
+        tableBody.push([ '', '', { content: `SOMMANO ${art.unit}`, styles: { fontStyle: 'bold', halign: 'right', cellPadding: { right: 1, top: 3, bottom: 2 }, isTotalRow: true } }, '', '', '', '', { content: formatNumber(art.quantity), styles: { fontStyle: 'bold', halign: 'left', cellPadding: { top: 3, left: 1.5 }, isTotalRow: true, fontSize: 8 } }, { content: formatNumber(art.unitPrice), styles: { halign: 'left', cellPadding: { top: 3, left: 1.5 }, isTotalRow: true, fontSize: 8 } }, { content: art.quantity * art.unitPrice, styles: { fontStyle: 'bold', halign: 'left', textColor: [0, 0, 120], cellPadding: { top: 3, left: 1.5 }, isTotalRow: true, fontSize: 8 } } ]);
+        tableBody.push([{ content: '', colSpan: 10, styles: { cellPadding: 1.5 } }]);
+    });
+};
+
 export const generateElencoPrezziPdf = async (projectInfo: ProjectInfo, categories: Category[], articles: Article[]) => {
     try {
         const { jsPDF, autoTable } = await getLibs();
         const doc = new jsPDF();
         const tableBody: any[] = [];
-
         categories.forEach((cat) => {
+            if (cat.isSuperCategory) return;
             if (!cat.isEnabled) return;
             const catArticles = articles.filter(a => a.categoryCode === cat.code);
             if (catArticles.length === 0) return;
-
-            tableBody.push([{ content: `${cat.code} - ${cat.name}`, colSpan: 5, styles: { fillColor: [230, 230, 230], fontStyle: 'bold', textColor: [0,0,0] } }]);
-
+            tableBody.push([{ content: `${cat.code} - ${cat.name}`, colSpan: 5, styles: { fillColor: [230, 230, 230], fontStyle: 'bold' } }]);
             catArticles.forEach((art, artIndex) => {
-                const wbsNum = cat.code.match(/WBS\.(\d+)/)?.[1] || cat.code;
-                tableBody.push([
-                    { content: `${parseInt(wbsNum, 10)}.${artIndex + 1}`, styles: { halign: 'center' } },
-                    { content: art.code, styles: { fontStyle: 'bold' } },
-                    { content: art.description, styles: { halign: 'justify', cellPadding: { left: 3, right: 3 } } },
-                    { content: art.unit, styles: { halign: 'center' } },
-                    { 
-                        content: `€ ${formatCurrency(art.unitPrice)}\n(${numberToItalianWords(art.unitPrice)})`, 
-                        styles: { halign: 'right', fontStyle: 'bold' } 
-                    }
-                ]);
+                tableBody.push([{ content: `${getWbsNumber(cat.code)}.${artIndex + 1}`, styles: { halign: 'center' } }, { content: art.code, styles: { fontStyle: 'bold' } }, { content: art.description, styles: { halign: 'justify', fontSize: 8 } }, { content: art.unit, styles: { halign: 'center' } }, { content: `€ ${formatCurrency(art.unitPrice)}\n(${numberToItalianWords(art.unitPrice)})`, styles: { halign: 'left', fontStyle: 'bold', fontSize: 7.5 } }]);
             });
         });
-
-        autoTable(doc, {
-            head: [['N.Ord', 'Codice', 'Descrizione Articolo', 'U.M.', 'Prezzo Unitario']],
-            body: tableBody,
-            startY: 40,
-            margin: { top: 35 },
-            theme: 'grid',
-            styles: { fontSize: 9, valign: 'top', cellPadding: 2, lineColor: [200,200,200], lineWidth: 0.1 },
-            columnStyles: {
-                0: { cellWidth: 15 },
-                1: { cellWidth: 25 },
-                2: { cellWidth: 'auto' },
-                3: { cellWidth: 15 },
-                4: { cellWidth: 40 }
-            },
-            headStyles: { fillColor: [50, 50, 50], textColor: [255, 255, 255] },
-            didDrawPage: (data: any) => {
-                drawHeader(doc, projectInfo, "ELENCO PREZZI UNITARI", data.pageNumber);
-            }
-        });
-
-        doc.save(`${projectInfo.title.replace(/\s+/g, '_')}_ElencoPrezzi.pdf`);
-    } catch (e) {
-        console.error(e);
-        alert("Errore generazione Elenco Prezzi");
-    }
+        autoTable(doc, { head: [['N.Ord', 'TARIFFA', 'DESIGNAZIONE DEI LAVORI', 'U.M.', 'PREZZO UNITARIO']], body: tableBody, startY: 40, theme: 'grid', styles: { fontSize: 8, cellPadding: 2.5 }, headStyles: { fillColor: [60, 60, 60] }, didDrawPage: (data: any) => { drawHeaderSimple(doc, projectInfo, "ELENCO PREZZI UNITARI", data.pageNumber); } });
+        window.open(URL.createObjectURL(doc.output('blob')), '_blank');
+    } catch (e) { alert("Errore Elenco Prezzi."); }
 };
 
-// --------------------------------------------------------------------------------
-// 3. STIMA INCIDENZA MANODOPERA
-// --------------------------------------------------------------------------------
 export const generateManodoperaPdf = async (projectInfo: ProjectInfo, categories: Category[], articles: Article[]) => {
     try {
         const { jsPDF, autoTable } = await getLibs();
         const doc = new jsPDF();
         const tableBody: any[] = [];
-
+        let totalLaborSum = 0;
         categories.forEach((cat) => {
+            if (cat.isSuperCategory) return;
             if (!cat.isEnabled) return;
             const catArticles = articles.filter(a => a.categoryCode === cat.code);
             if (catArticles.length === 0) return;
-
-            // Header Categoria - COLSPAN 7 to match columns
-            tableBody.push([{ content: `${cat.code} - ${cat.name}`, colSpan: 7, styles: { fillColor: [230, 230, 230], fontStyle: 'bold', textColor: [0,0,0] } }]);
-
+            tableBody.push([{ content: `${cat.code} - ${cat.name}`, colSpan: 6, styles: { fillColor: [230, 230, 230], fontStyle: 'bold' } }]);
             catArticles.forEach((art, artIndex) => {
-                const wbsNum = cat.code.match(/WBS\.(\d+)/)?.[1] || cat.code;
-                const totalAmount = art.quantity * art.unitPrice;
-                const laborVal = totalAmount * (art.laborRate / 100);
-
-                tableBody.push([
-                    { content: `${parseInt(wbsNum, 10)}.${artIndex + 1}`, styles: { halign: 'center' } }, // 0
-                    { content: art.code, styles: { fontStyle: 'bold' } }, // 1
-                    { content: art.description, styles: { halign: 'justify', cellPadding: { left: 3, right: 3 } } }, // 2
-                    { content: art.unit, styles: { halign: 'center' } }, // 3: U.M.
-                    { content: formatNumber(art.quantity), styles: { halign: 'right' } }, // 4: Qty
-                    { content: `${art.laborRate}%`, styles: { halign: 'center' } }, // 5: %
-                    { content: laborVal, styles: { halign: 'right', fontStyle: 'bold' } } // 6: Amount
-                ]);
+                const totalItem = art.quantity * art.unitPrice;
+                const laborPart = totalItem * (art.laborRate / 100);
+                totalLaborSum += laborPart;
+                tableBody.push([ { content: `${getWbsNumber(cat.code)}.${artIndex + 1}`, styles: { halign: 'center' } }, art.code, { content: art.description, styles: { fontSize: 7, halign: 'justify' } }, { content: formatNumber(art.quantity), styles: { halign: 'left' } }, { content: `${art.laborRate}%`, styles: { halign: 'center' } }, { content: formatCurrency(laborPart), styles: { halign: 'left', fontStyle: 'bold' } } ]);
             });
         });
-
-        let grandTotal = 0;
-        let pageTotal = 0;
-
-        autoTable(doc, {
-            head: [['N.', 'Codice', 'Descrizione', 'U.M.', 'Quantità', '% M.O.', 'Importo M.O.']],
-            body: tableBody,
-            startY: 40,
-            margin: { top: 35, bottom: 30 },
-            theme: 'grid',
-            styles: { fontSize: 8, valign: 'top', cellPadding: 2 },
-            columnStyles: {
-                0: { cellWidth: 10 },
-                1: { cellWidth: 20 },
-                2: { cellWidth: 'auto' },
-                3: { cellWidth: 10, halign: 'center' }, // U.M.
-                4: { cellWidth: 20, halign: 'right' }, // Qty
-                5: { cellWidth: 15, halign: 'center' },
-                6: { cellWidth: 25, halign: 'right' }
-            },
-            headStyles: { fillColor: [100, 100, 150], textColor: [255, 255, 255] },
-            didDrawCell: (data: any) => {
-                // Check index 6 for Amount (Importo M.O.)
-                if (data.section === 'body' && data.column.index === 6) {
-                    const rawVal = data.cell.raw;
-                    if (typeof rawVal === 'number' || (typeof rawVal === 'object' && (rawVal as any).content && typeof (rawVal as any).content === 'number')) {
-                        const val = typeof rawVal === 'number' ? rawVal : (rawVal as any).content;
-                        pageTotal += val;
-                    }
-                }
-            },
-            didParseCell: (data: any) => {
-                if (data.section === 'body' && data.column.index === 6) {
-                     const rawVal = data.cell.raw;
-                     if (typeof rawVal === 'object' && typeof (rawVal as any).content === 'number') {
-                         data.cell.text = [formatCurrency((rawVal as any).content)];
-                     } else if (typeof rawVal === 'number') {
-                         data.cell.text = [formatCurrency(rawVal)];
-                     }
-                }
-            },
-            didDrawPage: (data: any) => {
-                drawHeader(doc, projectInfo, "STIMA INCIDENZA MANODOPERA", data.pageNumber, grandTotal, undefined, undefined, true);
-                drawFooter(doc, data.pageNumber, grandTotal, pageTotal, doc.internal.pageSize.width, doc.internal.pageSize.height, true);
-                grandTotal += pageTotal;
-                pageTotal = 0;
-            }
-        });
-
-        // --- RIEPILOGO FINALE PER WBS ---
-        doc.addPage();
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.text("RIEPILOGO INCIDENZA MANODOPERA PER CATEGORIE", 10, 20);
-        
-        const summaryRows: any[] = [];
-        let totalLaborSum = 0;
-
-        categories.forEach(cat => {
-            if (!cat.isEnabled) return;
-            const catLaborTotal = articles.filter(a => a.categoryCode === cat.code).reduce((sum, a) => {
-                const itemTotal = a.quantity * a.unitPrice;
-                const laborPart = itemTotal * (a.laborRate / 100);
-                return sum + laborPart;
-            }, 0);
-
-            if (catLaborTotal > 0) {
-                totalLaborSum += catLaborTotal;
-                summaryRows.push([cat.code, cat.name, formatCurrency(catLaborTotal)]);
-            }
-        });
-
-        summaryRows.push(['', '', '']);
-        summaryRows.push([
-            { content: 'TOTALE GENERALE MANODOPERA', colSpan: 2, styles: { fontStyle: 'bold', fontSize: 11, halign: 'center', fillColor: [230, 230, 230] } }, 
-            { content: formatCurrency(totalLaborSum), styles: { fontStyle: 'bold', fontSize: 11, halign: 'right', fillColor: [230, 230, 230] } }
-        ]);
-
-        autoTable(doc, {
-            head: [['Codice WBS', 'Descrizione Categoria', 'Importo Manodopera (€)']],
-            body: summaryRows,
-            startY: 30,
-            theme: 'grid',
-            styles: { fontSize: 10, cellPadding: 3 },
-            columnStyles: { 
-                0: { cellWidth: 30 }, 
-                1: { cellWidth: 'auto' }, 
-                2: { cellWidth: 50, halign: 'right' } 
-            },
-            headStyles: { fillColor: [50, 50, 50], textColor: [255, 255, 255], fontStyle: 'bold' }
-        });
-
-        doc.save(`${projectInfo.title.replace(/\s+/g, '_')}_Manodopera.pdf`);
-
-    } catch (e) {
-        console.error(e);
-        alert("Errore generazione Stima Manodopera");
-    }
+        tableBody.push([{ content: 'TOTALE GENERALE INCIDENZA MANODOPERA', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [230, 230, 255] } }, { content: formatCurrency(totalLaborSum), styles: { halign: 'left', fontStyle: 'bold', fillColor: [230, 230, 255] } }]);
+        autoTable(doc, { head: [['N.Ord', 'TARIFFA', 'DESIGNAZIONE DEI LAVORI', 'QUANTITÀ', '% M.O.', 'IMPORTO M.O.']], body: tableBody, startY: 40, theme: 'grid', styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [41, 128, 185] }, didDrawPage: (data: any) => { drawHeaderSimple(doc, projectInfo, "STIMA INCIDENZA MANODOPERA", data.pageNumber); } });
+        window.open(URL.createObjectURL(doc.output('blob')), '_blank');
+    } catch (e) { alert("Errore Manodopera."); }
 };
 
-// --------------------------------------------------------------------------------
-// 4. ANALISI PREZZI PDF
-// --------------------------------------------------------------------------------
 export const generateAnalisiPrezziPdf = async (projectInfo: ProjectInfo, analyses: PriceAnalysis[]) => {
     try {
         const { jsPDF, autoTable } = await getLibs();
         const doc = new jsPDF();
-        
-        if (analyses.length === 0) {
-            alert("Nessuna analisi da stampare.");
-            return;
-        }
-
-        analyses.forEach((analysis, index) => {
-            if (index > 0) doc.addPage(); // New page for each analysis (professional look)
-
-            drawHeader(doc, projectInfo, "ANALISI DEI NUOVI PREZZI", index + 1, undefined, undefined, undefined, false);
-
-            // Title of Analysis
-            doc.setFontSize(11);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(0,0,0);
-            doc.text(`${analysis.code} - ${analysis.description}`, 14, 40);
-            
-            doc.setFontSize(9);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(80,80,80);
-            doc.text(`Analisi eseguita per una quantità di: ${analysis.analysisQuantity} ${analysis.unit}`, 14, 45);
-
-            // Components Table
-            const body = analysis.components.map(c => {
-                let typeStr = "";
-                if (c.type === 'material') typeStr = 'Mat.';
-                else if (c.type === 'labor') typeStr = 'M.O.';
-                else if (c.type === 'equipment') typeStr = 'Noli';
-                else typeStr = 'Gen.';
-
-                return [
-                    typeStr,
-                    c.description,
-                    c.unit,
-                    formatCurrency(c.unitPrice),
-                    formatNumber(c.quantity),
-                    formatCurrency(c.unitPrice * c.quantity)
-                ];
-            });
-
-            // Summary Rows (appended to the table or separate, let's append for layout consistency)
-            // But usually summary is at bottom right. AutoTable makes it hard to align right without rows.
-            // Let's draw the main table first.
-            
-            autoTable(doc, {
-                startY: 50,
-                head: [['Tipo', 'Descrizione Elemento', 'U.M.', 'Pr. Unit.', 'Quantità', 'Importo']],
-                body: body,
-                theme: 'striped',
-                styles: { fontSize: 9, cellPadding: 2 },
-                headStyles: { fillColor: [80, 80, 80], textColor: [255, 255, 255] },
-                columnStyles: {
-                    0: { cellWidth: 15, fontStyle: 'bold' },
-                    1: { cellWidth: 'auto' },
-                    2: { cellWidth: 15, halign: 'center' },
-                    3: { cellWidth: 25, halign: 'right' },
-                    4: { cellWidth: 20, halign: 'center' },
-                    5: { cellWidth: 25, halign: 'right' }
-                },
-                foot: [
-                    [{ content: 'Totale Costo Tecnico', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold' } }, { content: formatCurrency(analysis.costoTecnico), styles: { halign: 'right', fontStyle: 'bold' } }]
-                ]
-            });
-
-            // Calculate Summary Block Position
+        analyses.forEach((an, idx) => {
+            if (idx > 0) doc.addPage();
+            drawHeaderSimple(doc, projectInfo, "ANALISI DEI PREZZI UNITARI", 1);
+            doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text(`${an.code} - ${an.description}`, 12, 52);
+            doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.text(`Analisi riferita a ${an.analysisQuantity} ${an.unit}`, 12, 57);
+            const body = an.components.map(c => [c.type.toUpperCase().substring(0,3), c.description, c.unit, formatCurrency(c.unitPrice), formatNumber(c.quantity), formatCurrency(c.unitPrice * c.quantity)]);
+            autoTable(doc, { startY: 62, head: [['TIPO', 'ELEMENTO DI COSTO', 'U.M.', 'PREZZO', 'Q.TÀ', 'IMPORTO']], body: body, theme: 'striped', styles: { fontSize: 8 }, headStyles: { fillColor: [142, 68, 173] } });
             let finalY = (doc as any).lastAutoTable.finalY + 10;
-            
-            // Avoid page break for summary if possible
-            if (finalY > 250) {
-                doc.addPage();
-                finalY = 20;
-            }
-
-            const rightMargin = 195;
-            const labelX = 140;
-            const valueX = 195;
-
-            doc.setFontSize(9);
-            
-            // Spese Generali
-            doc.setFont("helvetica", "normal");
-            doc.text(`Spese Generali (${analysis.generalExpensesRate}%)`, labelX, finalY, { align: 'right' });
-            doc.text(formatCurrency(analysis.valoreSpese), valueX, finalY, { align: 'right' });
-            
-            finalY += 6;
-            // Utile
-            doc.text(`Utile d'Impresa (${analysis.profitRate}%)`, labelX, finalY, { align: 'right' });
-            doc.text(formatCurrency(analysis.valoreUtile), valueX, finalY, { align: 'right' });
-
-            finalY += 2;
-            doc.setDrawColor(0);
-            doc.line(labelX - 40, finalY, valueX, finalY);
-            
-            finalY += 6;
-            // Totale Batch
-            doc.setFont("helvetica", "bold");
-            doc.text(`Totale Analisi (${analysis.analysisQuantity} ${analysis.unit})`, labelX, finalY, { align: 'right' });
-            doc.text(formatCurrency(analysis.totalBatchValue), valueX, finalY, { align: 'right' });
-
-            finalY += 10;
-            // PREZZO UNITARIO BOX
-            doc.setFillColor(230, 230, 230);
-            doc.rect(100, finalY - 6, 95, 12, 'F');
-            doc.setFontSize(11);
-            doc.text("PREZZO UNITARIO APPLICATO", 105, finalY + 2);
-            doc.text(`€ ${formatCurrency(analysis.totalUnitPrice)}`, 190, finalY + 2, { align: 'right' });
+            const drawRow = (label: string, val: number, bold = false) => {
+                doc.setFont("helvetica", bold ? "bold" : "normal"); doc.text(label, 150, finalY, { align: 'right' });
+                doc.text(formatCurrency(val), 195, finalY, { align: 'left' }); finalY += 6;
+            };
+            drawRow("Costo Tecnico", an.costoTecnico); drawRow(`Spese Generali (${an.generalExpensesRate}%)`, an.valoreSpese);
+            drawRow(`Utile d'Impresa (${an.profitRate}%)`, an.valoreUtile); doc.line(130, finalY - 3, 195, finalY - 3);
+            drawRow(`TOTALE ANALISI`, an.totalBatchValue, true);
         });
+        window.open(URL.createObjectURL(doc.output('blob')), '_blank');
+    } catch (e) { alert("Errore Analisi."); }
+};
 
-        doc.save(`${projectInfo.title.replace(/\s+/g, '_')}_AnalisiPrezzi.pdf`);
-
-    } catch (e) {
-        console.error(e);
-        alert("Errore generazione Analisi Prezzi PDF");
+const drawHeaderSimple = (doc: any, projectInfo: ProjectInfo, title: string, pageNumber: number) => {
+    doc.setTextColor(0,0,0);
+    if (pageNumber === 1) {
+        doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(title, 105, 18, { align: 'center' });
+        doc.setFontSize(10); doc.text(projectInfo.title, 12, 28);
+        doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.text(`Committente: ${projectInfo.client}`, 12, 33);
+        doc.text(`Progettista: ${projectInfo.designer}`, 12, 37); doc.line(10, 44, 200, 44);
+    } else {
+        doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text(projectInfo.title, 12, 15); doc.line(10, 18, 200, 18);
     }
 };
 
-// Re-export original name for backward compatibility
 export const generateProfessionalPdf = generateComputoMetricPdf;

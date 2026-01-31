@@ -4,17 +4,21 @@ export interface Category {
   name: string;
   isLocked?: boolean;
   isEnabled?: boolean;
+  isImported?: boolean;
+  isSuperCategory?: boolean; // Se true, funge da raccoglitore di WBS
+  type?: 'work' | 'safety'; // Distingue tra capitoli di lavoro e di sicurezza
+  parentId?: string; // ID della categoria genitore per raggruppamento
+  color?: string; // Colore identificativo (usato principalmente per Super Categorie)
 }
 
 export interface Measurement {
   id: string;
   description: string;
   type: 'positive' | 'deduction' | 'subtotal';
-  length?: number; // Lunghezza
-  width?: number;  // Larghezza
-  height?: number; // Altezza / Peso
-  multiplier?: number; // Parti uguali - Optional/Undefined means 1 visually but blank
-  // Dynamic Linking fields
+  length?: number;
+  width?: number;
+  height?: number;
+  multiplier?: number;
   linkedArticleId?: string;
   linkedType?: 'quantity' | 'amount';
 }
@@ -23,16 +27,17 @@ export interface Article {
   id: string;
   categoryCode: string;
   code: string;
-  priceListSource?: string; // e.g. "Prezzario DEI 2024" or "Da Analisi AP.01"
+  priceListSource?: string;
   description: string;
   unit: string;
   unitPrice: number;
-  laborRate: number; // Incidenza Manodopera %
-  measurements: Measurement[]; // The list of detailed measurements
-  quantity: number; // Calculated cached sum
-  linkedAnalysisId?: string; // ID of the PriceAnalysis if linked
-  isLocked?: boolean; // NEW: Lock individual article
-  soaCategory?: string; // NEW: SOA Category (e.g., OG1, OS3)
+  laborRate: number;
+  measurements: Measurement[];
+  quantity: number;
+  linkedAnalysisId?: string;
+  isLocked?: boolean;
+  soaCategory?: string;
+  groundingUrls?: any[];
 }
 
 export interface AnalysisComponent {
@@ -41,33 +46,33 @@ export interface AnalysisComponent {
   description: string;
   unit: string;
   unitPrice: number;
-  quantity: number; // Quantity needed for the analysis batch
+  quantity: number;
 }
 
 export interface PriceAnalysis {
   id: string;
-  code: string; // e.g. "AP.01"
-  description: string; // Title of the analysis
-  unit: string; // U.M. of the resulting item (e.g. m2)
-  analysisQuantity: number; // NEW: The quantity being analyzed (sample size)
+  code: string;
+  description: string;
+  unit: string;
+  analysisQuantity: number;
   components: AnalysisComponent[];
-  generalExpensesRate: number; // % Spese Generali (default 15%)
-  profitRate: number; // % Utile d'Impresa (default 10%)
-  
-  // Calculated values (cached for display)
+  generalExpensesRate: number;
+  profitRate: number;
+  isLocked?: boolean;
   totalMaterials: number;
   totalLabor: number;
   totalEquipment: number;
-  costoTecnico: number; // Sum of above
+  costoTecnico: number;
   valoreSpese: number;
   valoreUtile: number;
-  totalBatchValue: number; // Total value of the batch
-  totalUnitPrice: number; // The final price per unit (Batch / Quantity)
+  totalBatchValue: number;
+  totalUnitPrice: number;
 }
 
 export interface ProjectInfo {
   title: string;
   client: string;
+  designer: string;
   location: string;
   date: string;
   priceList: string; 
@@ -75,11 +80,19 @@ export interface ProjectInfo {
   year: string;
   vatRate: number;
   safetyRate: number;
+  fontSizeTitle?: number; 
+  fontSizeClient?: number;
+  fontSizeTotals?: number;
+  tariffColumnWidth?: number;
+  fontSizeMeasurements?: number;
+  fontSizeWbsSidebar?: number;
 }
 
 export interface Totals {
   totalWorks: number;
+  totalLabor: number; // Aggiunto per calcolo uomini-giorno
   safetyCosts: number;
+  totalSafetyProgettuale: number; // Somma analitica dei capitoli sicurezza (S.xx)
   totalTaxable: number;
   vatAmount: number;
   grandTotal: number;

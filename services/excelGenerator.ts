@@ -1,202 +1,140 @@
+
 import { Article, Category, ProjectInfo, Measurement } from '../types';
 
-const getWbsNumber = (code: string) => {
-    const match = code.match(/WBS\.(\d+)/);
-    return match ? parseInt(match[1], 10) : code;
+const formatNumber = (val: number | undefined) => {
+  if (val === undefined || val === null || val === 0) return '';
+  return val.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 export const generateComputoExcel = (projectInfo: ProjectInfo, categories: Category[], articles: Article[]) => {
   const fileName = `${projectInfo.title.replace(/\s+/g, '_')}_Computo.xls`;
-  
-  let xml = `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Vertical="Bottom"/>
-   <Borders/>
-   <Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
-   <Interior/>
-   <NumberFormat/>
-   <Protection/>
-  </Style>
-  <Style ss:ID="Header">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
-   </Borders>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#000000" ss:Bold="1"/>
-   <Interior ss:Color="#E0E0E0" ss:Pattern="Solid"/>
-  </Style>
-  <Style ss:ID="WbsRow">
-   <Alignment ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
-   </Borders>
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
-   <Interior ss:Color="#F5F5F5" ss:Pattern="Solid"/>
-  </Style>
-  <Style ss:ID="ArticleHeader">
-   <Alignment ss:Vertical="Top" ss:WrapText="1"/>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1"/>
-  </Style>
-  <Style ss:ID="ArticleDesc">
-   <Alignment ss:Vertical="Top" ss:WrapText="1" ss:Horizontal="Justify"/>
-   <Font ss:FontName="Times New Roman" ss:Size="10"/>
-  </Style>
-  <Style ss:ID="MeasHeader">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Left"/>
-   <Font ss:FontName="Calibri" ss:Size="8" ss:Bold="1" ss:Color="#666666"/>
-  </Style>
-  <Style ss:ID="MeasRow">
-   <Alignment ss:Vertical="Top" ss:WrapText="1" ss:Horizontal="Justify"/>
-   <Font ss:FontName="Calibri" ss:Size="9" ss:Italic="1" ss:Color="#444444"/>
-  </Style>
-  <Style ss:ID="MeasValue">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Top"/>
-   <Font ss:FontName="Courier New" ss:Size="9"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-  </Style>
-  <Style ss:ID="QtyValue">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Top"/>
-   <Font ss:FontName="Courier New" ss:Size="9" ss:Bold="1"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-  </Style>
-  <Style ss:ID="Currency">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Bold="1"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-  </Style>
-  <Style ss:ID="TotalLabel">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#000080"/>
-  </Style>
-  <Style ss:ID="TotalQtyCell">
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Double" ss:Weight="3"/>
-   </Borders>
-   <Font ss:FontName="Courier New" ss:Size="10" ss:Bold="1"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-  </Style>
- </Styles>
- <Worksheet ss:Name="Computo Metrico">
-  <Table ss:ExpandedColumnCount="10" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="15">
-   <Column ss:Width="40"/>
-   <Column ss:Width="80"/>
-   <Column ss:Width="280"/>
-   <Column ss:Width="40"/>
-   <Column ss:Width="45"/>
-   <Column ss:Width="45"/>
-   <Column ss:Width="45"/>
-   <Column ss:Width="60"/>
-   <Column ss:Width="70"/>
-   <Column ss:Width="80"/>
-   
-   <Row ss:Height="25">
-    <Cell ss:MergeAcross="9" ss:StyleID="WbsRow"><Data ss:Type="String">PROGETTO: ${projectInfo.title} - Committente: ${projectInfo.client}</Data></Cell>
-   </Row>
-   <Row ss:Height="20">
-    <Cell ss:StyleID="Header"><Data ss:Type="String">N. ORD</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">TARIFFA</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">DESIGNAZIONE DEI LAVORI</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">P.UG</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">LUNG</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">LARG</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">H/P</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">Q.TÀ</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">UNITARIO</Data></Cell>
-    <Cell ss:StyleID="Header"><Data ss:Type="String">TOTALE</Data></Cell>
-   </Row>`;
+
+  // Stili CSS per Excel (HTML format "Old School")
+  const style = `
+    <style>
+      .header { background-color: #2c3e50; color: #ffffff; font-weight: bold; border: 0.5pt solid #000; }
+      .wbs-row { background-color: #f1f5f9; font-weight: bold; border: 0.5pt solid #000; }
+      .art-row { font-weight: bold; border: 0.5pt solid #000; }
+      .meas-row { color: #475569; font-style: italic; border: 0.5pt solid #cbd5e1; }
+      .num { mso-number-format:"\\#\\,\\#\\#0\\.00"; text-align: right; border: 0.5pt solid #cbd5e1; }
+      .total-row { font-weight: bold; border-top: 1.5pt solid #000; background-color: #f8fafc; }
+      .money { mso-number-format:"\\#\\,\\#\\#0\\.00"; text-align: right; color: #1e40af; font-weight: bold; border: 0.5pt solid #cbd5e1; }
+      td { border: 0.5pt solid #cbd5e1; vertical-align: top; }
+    </style>
+  `;
+
+  let html = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head><meta charset="utf-8" />${style}</head>
+    <body>
+      <table>
+        <tr><th colspan="10" style="font-size: 16pt; font-weight: bold;">COMPUTO METRICO ESTIMATIVO</th></tr>
+        <tr><th colspan="10" style="text-align: left;">Progetto: ${projectInfo.title}</th></tr>
+        <tr><th colspan="10" style="text-align: left;">Committente: ${projectInfo.client}</th></tr>
+        <tr><th colspan="10" style="text-align: left;">Listino: ${projectInfo.region} ${projectInfo.year}</th></tr>
+        <tr><td colspan="10"></td></tr>
+        <tr class="header">
+          <th>N.ORD</th>
+          <th>TARIFFA</th>
+          <th>DESIGNAZIONE DEI LAVORI</th>
+          <th>PAR.UG.</th>
+          <th>LUNG.</th>
+          <th>LARG.</th>
+          <th>H/PESO</th>
+          <th>QUANTITÀ</th>
+          <th>UNITARIO</th>
+          <th>TOTALE</th>
+        </tr>
+  `;
 
   categories.forEach(cat => {
-    if (!cat.isEnabled) return;
+    if (cat.isEnabled === false) return;
     const catArticles = articles.filter(a => a.categoryCode === cat.code);
     if (catArticles.length === 0) return;
 
-    xml += `
-   <Row ss:Height="22">
-    <Cell ss:MergeAcross="9" ss:StyleID="WbsRow"><Data ss:Type="String">${cat.code} - ${cat.name}</Data></Cell>
-   </Row>`;
+    // Riga WBS
+    html += `
+      <tr class="wbs-row">
+        <td colspan="10" style="height: 25pt; vertical-align: middle; font-size: 11pt;">${cat.code} - ${cat.name.toUpperCase()}</td>
+      </tr>
+    `;
 
     catArticles.forEach((art, artIdx) => {
-      const artNum = `${getWbsNumber(cat.code)}.${artIdx + 1}`;
-      
-      xml += `
-   <Row ss:AutoFitHeight="1">
-    <Cell ss:StyleID="ArticleHeader"><Data ss:Type="String">${artNum}</Data></Cell>
-    <Cell ss:StyleID="ArticleHeader"><Data ss:Type="String">${art.code}</Data></Cell>
-    <Cell ss:StyleID="ArticleDesc"><Data ss:Type="String">${art.description}</Data></Cell>
-    <Cell/><Cell/><Cell/><Cell/><Cell/><Cell/><Cell/>
-   </Row>
-   <Row ss:Height="12">
-    <Cell/><Cell/>
-    <Cell ss:StyleID="MeasHeader"><Data ss:Type="String">ELENCO DELLE MISURE:</Data></Cell>
-    <Cell/><Cell/><Cell/><Cell/><Cell/><Cell/><Cell/>
-   </Row>`;
+      const wbsNum = cat.code.replace(/[^0-9]/g, '');
+      const artNum = `${parseInt(wbsNum) || '0'}.${artIdx + 1}`;
 
-      const measCount = art.measurements.length;
+      // Riga Articolo
+      html += `
+        <tr class="art-row">
+          <td style="text-align: center;">${artNum}</td>
+          <td>${art.code}</td>
+          <td>${art.description}</td>
+          <td colspan="4"></td>
+          <td></td>
+          <td class="num">${formatNumber(art.unitPrice)}</td>
+          <td></td>
+        </tr>
+      `;
+
+      // Righe Misure
       art.measurements.forEach(m => {
-        if (m.type === 'subtotal') {
-            xml += `
-   <Row ss:AutoFitHeight="1">
-    <Cell/><Cell/>
-    <Cell ss:StyleID="TotalLabel"><Data ss:Type="String">Sommano parziale</Data></Cell>
-    <Cell/><Cell/><Cell/><Cell/>
-    <Cell ss:StyleID="QtyValue"><Data ss:Type="Number">0</Data></Cell> 
-    <Cell/><Cell/>
-   </Row>`;
-        } else {
-            const sign = m.type === 'deduction' ? -1 : 1;
-            const prodFormula = `=${sign}*IF(COUNT(RC[-4]:RC[-1])=0,0,PRODUCT(IF(RC[-4]=0,1,RC[-4]),IF(RC[-3]=0,1,RC[-3]),IF(RC[-2]=0,1,RC[-2]),IF(RC[-1]=0,1,RC[-1])))`;
-            
-            xml += `
-   <Row ss:AutoFitHeight="1">
-    <Cell/><Cell/>
-    <Cell ss:StyleID="MeasRow"><Data ss:Type="String">${m.description}</Data></Cell>
-    <Cell ss:StyleID="MeasValue">${m.multiplier !== undefined ? `<Data ss:Type="Number">${m.multiplier}</Data>` : ''}</Cell>
-    <Cell ss:StyleID="MeasValue">${m.length !== undefined ? `<Data ss:Type="Number">${m.length}</Data>` : ''}</Cell>
-    <Cell ss:StyleID="MeasValue">${m.width !== undefined ? `<Data ss:Type="Number">${m.width}</Data>` : ''}</Cell>
-    <Cell ss:StyleID="MeasValue">${m.height !== undefined ? `<Data ss:Type="Number">${m.height}</Data>` : ''}</Cell>
-    <Cell ss:StyleID="QtyValue" ss:Formula="${prodFormula}"><Data ss:Type="Number">0</Data></Cell>
-    <Cell/><Cell/>
-   </Row>`;
+        const sign = m.type === 'deduction' ? -1 : 1;
+        let rowVal = 0;
+        if (m.type !== 'subtotal') {
+            const mult = m.multiplier === undefined ? 1 : m.multiplier;
+            const l = m.length || 1;
+            const w = m.width || 1;
+            const h = m.height || 1;
+            const hasLocalData = m.length || m.width || m.height;
+            const base = hasLocalData ? (l * w * h) : 0;
+            const effectiveBase = (!hasLocalData && mult !== 0) ? 1 : base;
+            rowVal = effectiveBase * mult * sign;
         }
+
+        html += `
+          <tr class="meas-row">
+            <td></td>
+            <td></td>
+            <td style="${m.type === 'deduction' ? 'color: red;' : ''}">${m.type === 'subtotal' ? 'Sommano parziale' : m.description}</td>
+            <td class="num">${formatNumber(m.multiplier)}</td>
+            <td class="num">${formatNumber(m.length)}</td>
+            <td class="num">${formatNumber(m.width)}</td>
+            <td class="num">${formatNumber(m.height)}</td>
+            <td class="num">${formatNumber(rowVal)}</td>
+            <td></td>
+            <td></td>
+          </tr>
+        `;
       });
 
-      const sumFormula = `=SUM(R[-${measCount}]C:R[-1]C)`;
-      
-      xml += `
-   <Row ss:Height="18">
-    <Cell/><Cell/>
-    <Cell ss:StyleID="TotalLabel"><Data ss:Type="String">SOMMANO ${art.unit}</Data></Cell>
-    <Cell/><Cell/><Cell/><Cell/>
-    <Cell ss:StyleID="TotalQtyCell" ss:Formula="${sumFormula}"><Data ss:Type="Number">${art.quantity}</Data></Cell>
-    <Cell ss:StyleID="Currency"><Data ss:Type="Number">${art.unitPrice}</Data></Cell>
-    <Cell ss:StyleID="Currency" ss:Formula="=RC[-2]*RC[-1]"><Data ss:Type="Number">${art.quantity * art.unitPrice}</Data></Cell>
-   </Row>
-   <Row ss:Height="5"><Cell ss:MergeAcross="9"/></Row>`;
+      // Totale Articolo
+      html += `
+        <tr class="total-row">
+          <td colspan="2"></td>
+          <td style="text-align: right; padding-right: 5pt;">SOMMANO ${art.unit.toUpperCase()}</td>
+          <td colspan="4"></td>
+          <td class="num" style="font-weight: bold;">${formatNumber(art.quantity)}</td>
+          <td class="num">${formatNumber(art.unitPrice)}</td>
+          <td class="money">${formatNumber(art.quantity * art.unitPrice)}</td>
+        </tr>
+        <tr><td colspan="10" style="border: none; height: 10pt;"></td></tr>
+      `;
     });
   });
 
-  xml += `
-  </Table>
- </Worksheet>
-</Workbook>`;
+  html += `
+      </table>
+    </body>
+    </html>
+  `;
 
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = fileName;
+  document.body.appendChild(link);
   link.click();
+  document.body.removeChild(link);
   URL.revokeObjectURL(url);
 };

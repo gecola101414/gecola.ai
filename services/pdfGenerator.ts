@@ -148,28 +148,21 @@ export const generateComputoMetricPdf = async (projectInfo: ProjectInfo, categor
 
     tableBody.push([{ content: '', colSpan: 10, styles: { minCellHeight: 10, lineWidth: 0, fillColor: [255, 255, 255] } }]);
 
-    // SCANSIONE GERARCHICA RIGOROSA
     const topLevels = categories.filter(c => !c.parentId);
     
     topLevels.forEach(root => {
-        // Se la root stessa è disattivata, salta tutto il blocco
         if (root.isEnabled === false) return;
-
-        // Se è una super categoria, stampiamo il titolo di sezione
         if (root.isSuperCategory) {
             tableBody.push([
                 { content: '', colSpan: 2, styles: { lineWidth: 0 } },
                 { content: `AREA DI INTERVENTO: ${root.name.toUpperCase()}`, colSpan: 8, styles: { fillColor: [44, 62, 80], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', cellPadding: 3, isSuper: true } }
             ]);
-            
-            // Troviamo le WBS figlie in ordine
             const children = categories.filter(c => c.parentId === root.code && !c.isSuperCategory);
             children.forEach(child => {
                 if (child.isEnabled === false) return;
                 appendWbsToPdfBody(tableBody, child, articles);
             });
         } else {
-            // Se è una WBS standalone (top-level)
             appendWbsToPdfBody(tableBody, root, articles);
         }
     });
@@ -224,12 +217,65 @@ export const generateComputoMetricPdf = async (projectInfo: ProjectInfo, categor
           grandTotal += pageTotal; pageTotal = 0;
       }
     });
+
+    // 1. RIEPILOGO FINALE (Cambio Pagina)
+    doc.addPage();
+    const summaryTableBody: any[] = [];
+    let totalLavoriSum = 0;
+    let totalLaborSum = 0;
+
+    categories.forEach(cat => {
+        if (cat.isEnabled === false || cat.isSuperCategory) return;
+        const catArticles = articles.filter(a => a.categoryCode === cat.code);
+        const catTotal = catArticles.reduce((sum, a) => sum + (a.quantity * a.unitPrice), 0);
+        const catLabor = catArticles.reduce((sum, a) => sum + ((a.quantity * a.unitPrice) * (a.laborRate / 100)), 0);
+        
+        if (catTotal > 0 || catArticles.length > 0) {
+            totalLavoriSum += catTotal;
+            totalLaborSum += catLabor;
+            summaryTableBody.push([
+                { content: cat.code, styles: { fontStyle: 'bold', halign: 'center' } },
+                { content: cat.name.toUpperCase(), styles: { halign: 'left' } },
+                { content: formatCurrency(catTotal), styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: formatCurrency(catLabor), styles: { halign: 'right' } }
+            ]);
+        }
+    });
+
+    // Riga Totali Riepilogo
+    summaryTableBody.push([
+        { content: 'TOTALE GENERALE', colSpan: 2, styles: { fillColor: [240, 240, 240], fontStyle: 'bold', halign: 'right' } },
+        { content: formatCurrency(totalLavoriSum), styles: { fillColor: [240, 240, 240], fontStyle: 'bold', halign: 'right' } },
+        { content: formatCurrency(totalLaborSum), styles: { fillColor: [240, 240, 240], fontStyle: 'bold', halign: 'right' } }
+    ]);
+
+    autoTable(doc, {
+        head: [['COD.', 'DESCRIZIONE CAPITOLO (WBS)', 'IMPORTO LAVORI', 'INCIDENZA M.O.']],
+        body: summaryTableBody,
+        startY: 30,
+        margin: { left: 10, right: 10 },
+        theme: 'grid',
+        styles: { fontSize: 8.5, cellPadding: 3, overflow: 'linebreak' },
+        columnStyles: {
+            0: { cellWidth: 20 },
+            1: { cellWidth: 100 }, // Colonna larga per stare su un rigo
+            2: { cellWidth: 35 },
+            3: { cellWidth: 35 }
+        },
+        headStyles: { fillColor: [44, 62, 80], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+        didDrawPage: (data) => {
+            doc.setFontSize(12); doc.setFont("helvetica", "bold");
+            doc.text("RIEPILOGO GENERALE DEI LAVORI E DELLA MANODOPERA", 105, 20, { align: 'center' });
+        }
+    });
+
+    // Firma in calce al riepilogo
     drawSignature(doc, projectInfo, (doc as any).lastAutoTable.finalY);
+
     window.open(URL.createObjectURL(doc.output('blob')), '_blank');
   } catch (error) { console.error(error); alert("Errore PDF."); }
 };
 
-// Funzione di supporto per l'accodamento di una WBS e dei suoi articoli al corpo tabella
 const appendWbsToPdfBody = (tableBody: any[], cat: Category, articles: Article[]) => {
     const catArticles = articles.filter(a => a.categoryCode === cat.code);
     if (catArticles.length === 0) return;

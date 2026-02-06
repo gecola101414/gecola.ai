@@ -91,19 +91,22 @@ export const generateBulkItems = async (
 };
 
 /**
- * PARSER "AGGANCIO PERFETTO" v2.5
- * Ottimizzato per listini GeCoLa.it e copia-incolla tabellare
+ * PARSER "AGGANCIO PERFETTO" v2.6
+ * Ottimizzato per listini GeCoLa.it: estrae dinamicamente il nome del prezzario ufficiale.
  */
 export const parseDroppedContent = (rawText: string): Partial<Article> | null => {
   try {
     if (!rawText) return null;
 
-    // Split per tabulazioni o spazi multipli (minimo 3 spazi)
-    let parts = rawText.split(/\t|\s{3,}/).map(s => s.trim()).filter(s => s.length > 0);
+    // Cleanup e normalizzazione testo
+    const cleanText = rawText.trim();
+
+    // Split per tabulazioni o spazi multipli (struttura tabellare)
+    let parts = cleanText.split(/\t|\s{3,}/).map(s => s.trim()).filter(s => s.length > 0);
     
     // Se non abbiamo abbastanza parti, proviamo a processare le righe
     if (parts.length < 3) {
-      parts = rawText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+      parts = cleanText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
     }
 
     if (parts.length < 3) return null;
@@ -115,8 +118,7 @@ export const parseDroppedContent = (rawText: string): Partial<Article> | null =>
         return parseFloat(clean);
     };
 
-    // Identificazione intelligente delle colonne
-    // Spesso l'ordine è: 0:Codice, 1:Descrizione, 2:UM, 3:Prezzo, 4:MO
+    // Mappatura Standard: 0:Codice, 1:Descrizione, 2:UM, 3:Prezzo, 4:MO%
     const code = parts[0] || 'NP.001';
     const description = parts[1] || 'Voce importata';
     const unit = parts[2] || 'cad';
@@ -128,6 +130,22 @@ export const parseDroppedContent = (rawText: string): Partial<Article> | null =>
        laborRate = !isNaN(val) ? (val <= 1 && val > 0 ? val * 100 : val) : 0;
     }
 
+    // --- LOGICA ESTRAZIONE PREZZARIO UFFICIALE (Task Richiesto) ---
+    let priceListSource = "Prezzario Ufficiale";
+    
+    // Se è presente una sesta parte, solitamente è il nome del prezzario sorgente
+    if (parts.length >= 6) {
+       priceListSource = parts[5];
+    } else {
+       // Euristiche di ricerca nel blocco di testo completo per pattern comuni (es. "Prezzario Regione... 2024")
+       const sourceMatch = cleanText.match(/(Prezzario|Listino|Tariffario)\s+[A-Za-z\s,]+\s+\d{4}/i);
+       if (sourceMatch) {
+           priceListSource = sourceMatch[0];
+       } else if (cleanText.toLowerCase().includes("gecola.it")) {
+           priceListSource = "Listino Online GeCoLa";
+       }
+    }
+
     return {
       code,
       description,
@@ -135,7 +153,7 @@ export const parseDroppedContent = (rawText: string): Partial<Article> | null =>
       unitPrice: isNaN(unitPrice) ? 0 : unitPrice,
       laborRate: isNaN(laborRate) ? 0 : laborRate,
       quantity: 1,
-      priceListSource: "Listino GeCoLa"
+      priceListSource
     };
   } catch (error) {
     console.error("Perfect Hook Parser Error:", error);

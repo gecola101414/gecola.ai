@@ -1,5 +1,5 @@
 {
-  "name": "Civil Engineering Price List Analyzer",
-  "description": "Analyze and filter XML price lists for civil engineering projects.",
+  "name": "Data Extractor_5",
+  "description": "An application to extract and display structured data from text files.",
   "requestFramePermissions": []
 }

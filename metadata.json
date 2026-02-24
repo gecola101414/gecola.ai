@@ -1,5 +1,5 @@
 {
-  "name": "Data Extractor_5",
-  "description": "An application to extract and display structured data from text files.",
+  "name": "Data Extractor_7",
+  "description": "An application to extract and display structured data from text files, with advanced keyword filtering (singular/plural) and highlighting.",
   "requestFramePermissions": []
 }

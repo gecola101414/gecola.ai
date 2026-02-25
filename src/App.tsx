@@ -3,299 +3,836 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
-import { Loader2 } from 'lucide-react';
-import HighlightedInput from './components/HighlightedInput';
+import React, { useState } from 'react';
+import { 
+  FileText, 
+  Building2, 
+  MapPin, 
+  Construction, 
+  Image as ImageIcon, 
+  Eye, 
+  Download,
+  Plus,
+  Camera,
+  Trash2,
+  ChevronRight,
+  CheckCircle2,
+  Loader2
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from './lib/utils';
+import { PiMUSData, FacadeInfo } from './types';
+import { generateSafetyProcedures } from './services/geminiService';
+import { BasePlateDiagram, GuardrailDiagram, AnchorDiagram } from './components/ScaffoldingDiagrams';
+import { ScaffoldingOverlay } from './components/ScaffoldingOverlay';
 
-interface DataItem {
-  Tariffa: string;
-  DesEstesa: string;
-  UnMisura: string;
-  Prezzo1: string;
-  IncMDO: string;
-}
+// --- Components ---
+
+const SidebarItem = ({ 
+  icon: Icon, 
+  label, 
+  active, 
+  onClick,
+  completed 
+}: { 
+  icon: any, 
+  label: string, 
+  active: boolean, 
+  onClick: () => void,
+  completed?: boolean
+}) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      "w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-all duration-200 border-r-2",
+      active 
+        ? "bg-zinc-900 text-white border-white" 
+        : "text-zinc-500 border-transparent hover:bg-zinc-100 hover:text-zinc-900"
+    )}
+  >
+    <Icon size={18} className={active ? "text-white" : "text-zinc-400"} />
+    <span className="flex-1 text-left">{label}</span>
+    {completed && !active && <CheckCircle2 size={14} className="text-emerald-500" />}
+  </button>
+);
 
 export default function App() {
-  const highlightColor = '#FFFF00'; // Define highlight color here
-  const [originalData, setOriginalData] = useState<DataItem[]>([]);
-  const [extractedData, setExtractedData] = useState<DataItem[]>([]);
-  const [filterKeywords, setFilterKeywords] = useState<string>('');
-  const [jsonOutput, setJsonOutput] = useState<string>('');
-  const [matchedKeywords, setMatchedKeywords] = useState<{
-    word: string;
-    color: string;
-  }[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeStep, setActiveStep] = useState<'company' | 'site' | 'scaffolding' | 'facades' | 'preview'>('company');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [data, setData] = useState<PiMUSData>({
+    id: Math.random().toString(36).substr(2, 9),
+    createdAt: new Date().toISOString(),
+    company: { name: '', address: '', vat: '', phone: '', email: '' },
+    site: { address: '', client: '', manager: '', startDate: '' },
+    scaffolding: { type: 'Telai prefabbricati', brand: '', model: '', maxHeight: 0, facades: [] },
+    safetyProcedures: ''
+  });
 
-  const italianStopWords = [
-    'il', 'lo', 'la', 'i', 'gli', 'le', // definite articles
-    'un', 'uno', 'una', // indefinite articles
-    'di', 'a', 'da', 'in', 'con', 'su', 'per', 'tra', 'fra', // prepositions
-    'e', 'o', 'ma', 'se', 'perché', 'quindi', 'cioè', // conjunctions
-    'che', 'chi', 'cosa', 'dove', 'quando', 'come', 'quale', // interrogative/relative pronouns
-    'non', 'si', 'ci', 'ne', // common adverbs/particles
-    'io', 'tu', 'lui', 'lei', 'noi', 'voi', 'loro', // personal pronouns
-    'mio', 'tuo', 'suo', 'nostro', 'vostro', 'loro', // possessive adjectives
-    'questo', 'quello', 'ogni', 'alcuni', 'molti', 'tutti', // demonstrative/indefinite adjectives
-    'è', 'sono', 'ha', 'hanno', 'ho', 'hai', 'siamo', 'siete', // forms of 'essere' and 'avere'
-    'del', 'della', 'dei', 'degli', 'delle', // articulated prepositions
-    'al', 'alla', 'ai', 'agli', 'alle', // articulated prepositions
-    'dal', 'dalla', 'dai', 'dagli', 'dalle', // articulated prepositions
-    'nel', 'nella', 'nei', 'negli', 'nelle', // articulated prepositions
-    'col', 'colla', 'coi', 'cogli', 'colle', // articulated prepositions
-    'sul', 'sulla', 'sui', 'sugli', 'sulle', // articulated prepositions
-  ];
-
-  const extractData = (text: string) => {
-    setIsLoading(true);
-    const data: DataItem[] = [];
-    const regex = /<Tariffa>(.*?)<\/Tariffa>.*?<DesEstesa>(.*?)<\/DesEstesa>.*?<UnMisura>(.*?)<\/UnMisura>.*?<Prezzo1>(.*?)<\/Prezzo1>.*?<IncMDO>(.*?)<\/IncMDO>/gs;
-    let match;
-
-    while ((match = regex.exec(text)) !== null) {
-      data.push({
-        Tariffa: match[1].trim(),
-        DesEstesa: match[2].trim(),
-        UnMisura: match[3].trim(),
-        Prezzo1: match[4].trim(),
-        IncMDO: match[5].trim(),
-      });
-    }
-
-    setOriginalData(data);
-    setExtractedData(data);
-    setJsonOutput(JSON.stringify(data, null, 2));
-    setIsLoading(false);
+  const updateCompany = (field: string, value: string) => {
+    setData(prev => ({ ...prev, company: { ...prev.company, [field]: value } }));
   };
 
-  const pluralizeItalian = (word: string): string[] => {
-    const lowerWord = word.toLowerCase();
-    // Simple pluralization rules for common Italian endings
-    if (lowerWord.endsWith('o')) return [word, lowerWord.slice(0, -1) + 'i'];
-    if (lowerWord.endsWith('e')) return [word, lowerWord.slice(0, -1) + 'i'];
-    if (lowerWord.endsWith('a')) return [word, lowerWord.slice(0, -1) + 'e'];
-    if (lowerWord.endsWith('co')) return [word, lowerWord.slice(0, -2) + 'chi'];
-    if (lowerWord.endsWith('go')) return [word, lowerWord.slice(0, -2) + 'ghi'];
-    if (lowerWord.endsWith('ca')) return [word, lowerWord.slice(0, -2) + 'che'];
-    if (lowerWord.endsWith('ga')) return [word, lowerWord.slice(0, -2) + 'ghe'];
-    // Words ending in -i, -ie, or consonants often don't change or have irregular plurals
-    if (lowerWord.endsWith('i')) return [word];
-    // Default: return original word and assume it might be its own plural or an irregular one
-    return [word];
+  const updateSite = (field: string, value: string) => {
+    setData(prev => ({ ...prev, site: { ...prev.site, [field]: value } }));
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setIsLoading(true);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const content = e.target?.result as string;
-        extractData(content);
-      };
-      reader.readAsText(file);
-    }
+  const updateScaffolding = (field: string, value: any) => {
+    setData(prev => ({ ...prev, scaffolding: { ...prev.scaffolding, [field]: value } }));
   };
 
-  const applyFilter = () => {
-    if (!filterKeywords) {
-      setExtractedData(originalData);
-      setMatchedKeywords([]);
-      return;
-    }
+  const addFacade = () => {
+    const newFacade: FacadeInfo = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: `Facciata ${data.scaffolding.facades.length + 1}`,
+      width: 0,
+      height: 0
+    };
+    setData(prev => ({
+      ...prev,
+      scaffolding: {
+        ...prev.scaffolding,
+        facades: [...prev.scaffolding.facades, newFacade]
+      }
+    }));
+  };
 
-    const inputKeywords = filterKeywords.toLowerCase().split(' ').filter(word => word.length > 0);
-    const allKeywordForms = new Set<string>();
-    const filteredInputKeywords = inputKeywords.filter(word => !italianStopWords.includes(word));
+  const removeFacade = (id: string) => {
+    setData(prev => ({
+      ...prev,
+      scaffolding: {
+        ...prev.scaffolding,
+        facades: prev.scaffolding.facades.filter(f => f.id !== id)
+      }
+    }));
+  };
 
-    filteredInputKeywords.forEach(keyword => {
-      pluralizeItalian(keyword).forEach(form => allKeywordForms.add(form));
-    });
+  const updateFacade = (id: string, field: string, value: any) => {
+    setData(prev => ({
+      ...prev,
+      scaffolding: {
+        ...prev.scaffolding,
+        facades: prev.scaffolding.facades.map(f => f.id === id ? { ...f, [field]: value } : f)
+      }
+    }));
+  };
 
-
-    const currentMatchedKeywords: { word: string; color: string }[] = [];
-
-    const dataToFilter = filterKeywords.split(' ').length > 1 ? extractedData : originalData;
-
-    const scoredData = dataToFilter.map(item => {
-      const description = item.DesEstesa.toLowerCase();
-      let score = 0;
-      const itemMatchedWords: string[] = [];
-
-      allKeywordForms.forEach(keyword => {
-        const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-        if (regex.test(description)) {
-          score++;
-          itemMatchedWords.push(keyword);
-        }
-      });
-      return { ...item, score, itemMatchedWords };
-    });
-
-    const filteredAndSorted = scoredData
-      .filter(item => item.itemMatchedWords.length === filteredInputKeywords.length) // Filter only if all keywords are present in a single entry
-      .sort((a, b) => b.score - a.score); // Sort by the number of matched keywords
-
-    // Collect matched keywords for highlighting from the filtered data
-    filteredAndSorted.forEach(item => {
-      item.itemMatchedWords.forEach(matchedWord => {
-        if (!currentMatchedKeywords.some(mk => mk.word === matchedWord)) {
-          currentMatchedKeywords.push({
-            word: matchedWord,
-            color: highlightColor,
-          });
-        }
-      });
-    });
-
-    if (filteredAndSorted.length > 0 || filterKeywords.split(' ').length === 0) {
-      setMatchedKeywords(currentMatchedKeywords);
-      setExtractedData(filteredAndSorted);
-    } else {
-      // If no results for the new keyword, revert to previous extractedData and matchedKeywords
-      // This means the state remains unchanged, effectively preserving the previous filter.
-      console.log("No results for new keyword, preserving previous filter.");
+  const handleGenerateProcedures = async () => {
+    setIsGenerating(true);
+    try {
+      const procedures = await generateSafetyProcedures(
+        data.scaffolding.type,
+        data.scaffolding.brand,
+        data.scaffolding.model
+      );
+      // Clean up markdown artifacts but preserve bullet points (•)
+      const cleanProcedures = (procedures || '')
+        .replace(/\*/g, '')
+        .replace(/#/g, '')
+        .replace(/^- /gm, '• ') // Convert markdown dashes to dots if any
+        .trim();
+      
+      setData(prev => ({ ...prev, safetyProcedures: cleanProcedures }));
+      setActiveStep('preview');
+    } catch (error) {
+      console.error("Error generating procedures:", error);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
-  const highlightText = (text: string) => {
-    if (matchedKeywords.length === 0) return text;
-
-    let highlightedText: (string | JSX.Element)[] = [text];
-
-    matchedKeywords.forEach(({ word, color }) => {
-      const newHighlightedText: (string | JSX.Element)[] = [];
-      const regex = new RegExp(`(\\b${word}\\b)`, 'gi');
-
-      highlightedText.forEach(segment => {
-        if (typeof segment === 'string') {
-          const parts = segment.split(regex);
-          for (let i = 0; i < parts.length; i++) {
-            if (i % 2 === 1) {
-              newHighlightedText.push(
-                <span key={`${word}-${i}`} style={{ backgroundColor: color, borderRadius: '3px', padding: '1px 3px' }}>
-                  {parts[i]}
-                </span>
-              );
-            } else {
-              newHighlightedText.push(parts[i]);
-            }
-          }
-        } else {
-          newHighlightedText.push(segment);
-        }
-      });
-      highlightedText = newHighlightedText;
-    });
-
-    return <>{highlightedText}</>;
-  };
-
-  const resetFilter = () => {
-    setFilterKeywords('');
-    setExtractedData(originalData);
-    setMatchedKeywords([]);
-  };
-
-  const downloadJson = () => {
-    const blob = new Blob([jsonOutput], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'extracted_data.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const isStepComplete = (step: string) => {
+    switch(step) {
+      case 'company': return !!data.company.name && !!data.company.vat;
+      case 'site': return !!data.site.address && !!data.site.client;
+      case 'scaffolding': return !!data.scaffolding.brand && !!data.scaffolding.model;
+      case 'facades': return data.scaffolding.facades.length > 0;
+      default: return false;
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8 w-full max-w-full">
-      <h1 className="text-4xl font-bold text-gray-800 mb-8 text-center">Data Extractor</h1>
-
-      <div className="w-full bg-white p-6 rounded-lg shadow-md">
-        <div className="flex flex-col sm:flex-row gap-4 mb-4">
-          <HighlightedInput
-            id="filter-input"
-            className="flex-1 h-48 p-4 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Inserisci parole chiave per filtrare (es. 'Tariffa A', 'Descrizione B')..."
-            value={filterKeywords}
-            onChange={setFilterKeywords}
-            matchedKeywords={matchedKeywords}
-          />
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="hidden"
-            accept=".txt,.xml"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full sm:w-auto bg-green-600 text-white py-3 px-6 rounded-md hover:bg-green-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-          >
-            Carica File
-          </button>
-          <button
-            onClick={applyFilter}
-            className="w-full sm:w-auto bg-blue-600 text-white py-3 px-6 rounded-md hover:bg-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            disabled={isLoading}
-          >
-            Applica Filtro
-          </button>
-          <button
-            onClick={resetFilter}
-            className="w-full sm:w-auto bg-gray-500 text-white py-3 px-6 rounded-md hover:bg-gray-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-            disabled={isLoading}
-          >
-            Azzera Filtro
-          </button>
+    <div className="flex h-screen bg-zinc-50 font-sans text-zinc-900 overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white border-r border-zinc-200 flex flex-col">
+        <div className="p-6 border-b border-zinc-100">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 bg-zinc-900 rounded-lg flex items-center justify-center">
+              <Construction className="text-white" size={18} />
+            </div>
+            <h1 className="font-bold text-lg tracking-tight">PiMUS Pro</h1>
+          </div>
+          <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold">Technical Scaffolding Manager</p>
         </div>
 
-        {isLoading && (
-          <div className="flex justify-center items-center py-4">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-            <span className="ml-2 text-gray-600">Elaborazione dati...</span>
+        <nav className="flex-1 py-4">
+          <SidebarItem 
+            icon={Building2} 
+            label="Dati Impresa" 
+            active={activeStep === 'company'} 
+            onClick={() => setActiveStep('company')}
+            completed={isStepComplete('company')}
+          />
+          <SidebarItem 
+            icon={MapPin} 
+            label="Dati Cantiere" 
+            active={activeStep === 'site'} 
+            onClick={() => setActiveStep('site')}
+            completed={isStepComplete('site')}
+          />
+          <SidebarItem 
+            icon={Construction} 
+            label="Specifiche Ponteggio" 
+            active={activeStep === 'scaffolding'} 
+            onClick={() => setActiveStep('scaffolding')}
+            completed={isStepComplete('scaffolding')}
+          />
+          <SidebarItem 
+            icon={ImageIcon} 
+            label="Facciate e Rilievi" 
+            active={activeStep === 'facades'} 
+            onClick={() => setActiveStep('facades')}
+            completed={isStepComplete('facades')}
+          />
+          <div className="mt-8 px-4">
+            <div className="h-px bg-zinc-100 mb-4" />
+            <SidebarItem 
+              icon={Eye} 
+              label="Anteprima PiMUS" 
+              active={activeStep === 'preview'} 
+              onClick={() => setActiveStep('preview')}
+            />
           </div>
-        )}
+        </nav>
 
-        {!isLoading && extractedData.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-2xl font-semibold text-gray-700 mb-4">Extracted Data Table ({extractedData.length} items)</h2>
-            <div className="overflow-x-auto max-h-96 relative border border-gray-200 rounded-lg">
-              <table className="min-w-full bg-white">
-                <thead className="sticky top-0 bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
-                  <tr>
-                    <th className="py-3 px-6 text-left w-[8%]">Tariffa</th>
-                    <th className="py-3 px-6 text-left w-[60%]">Descrizione Estesa</th>
-                    <th className="py-3 px-6 text-left w-[7%]">Unità di Misura</th>
-                    <th className="py-3 px-6 text-left w-[12.5%]">Prezzo</th>
-                    <th className="py-3 px-6 text-left w-[12.5%]">Incidenza Manodopera</th>
-                  </tr>
-                </thead>
-                <tbody className="text-gray-600 text-sm font-light">
-                  {extractedData.map((item, index) => (
-                    <tr key={index} className="border-b border-gray-200 hover:bg-gray-100">
-                      <td className="py-3 px-6 text-left w-[8%] whitespace-nowrap">{item.Tariffa}</td>
-                      <td className="py-3 px-6 text-justify w-[60%] whitespace-normal break-words">{highlightText(item.DesEstesa)}</td>
-                      <td className="py-3 px-6 text-left w-[7%] whitespace-nowrap">{item.UnMisura}</td>
-                      <td className="py-3 px-6 text-left w-[12.5%] whitespace-nowrap">{item.Prezzo1}</td>
-                      <td className="py-3 px-6 text-left w-[12.5%] whitespace-nowrap">{item.IncMDO}</td>
-                    </tr>
+        <div className="p-4 bg-zinc-50 border-t border-zinc-200">
+          <button 
+            disabled={isGenerating || !isStepComplete('scaffolding')}
+            onClick={handleGenerateProcedures}
+            className="w-full bg-zinc-900 text-white py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            {isGenerating ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
+            Genera Documento
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-8 lg:p-12">
+        <div className="max-w-4xl mx-auto">
+          <AnimatePresence mode="wait">
+            {activeStep === 'company' && (
+              <motion.div
+                key="company"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight mb-1">Dati dell'Impresa</h2>
+                  <p className="text-zinc-500 text-sm">Inserisci le informazioni legali dell'impresa esecutrice.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Ragione Sociale</label>
+                    <input 
+                      type="text" 
+                      value={data.company.name}
+                      onChange={(e) => updateCompany('name', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                      placeholder="Esempio: Costruzioni S.r.l."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Partita IVA / CF</label>
+                    <input 
+                      type="text" 
+                      value={data.company.vat}
+                      onChange={(e) => updateCompany('vat', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Sede Legale</label>
+                    <input 
+                      type="text" 
+                      value={data.company.address}
+                      onChange={(e) => updateCompany('address', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Telefono</label>
+                    <input 
+                      type="text" 
+                      value={data.company.phone}
+                      onChange={(e) => updateCompany('phone', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Email / PEC</label>
+                    <input 
+                      type="email" 
+                      value={data.company.email}
+                      onChange={(e) => updateCompany('email', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => setActiveStep('site')} className="flex items-center gap-2 bg-zinc-900 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-zinc-800 transition-all">
+                    Prossimo <ChevronRight size={16} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {activeStep === 'site' && (
+              <motion.div
+                key="site"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight mb-1">Dati del Cantiere</h2>
+                  <p className="text-zinc-500 text-sm">Specifica l'ubicazione e i responsabili dei lavori.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Indirizzo Cantiere</label>
+                    <input 
+                      type="text" 
+                      value={data.site.address}
+                      onChange={(e) => updateSite('address', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Committente</label>
+                    <input 
+                      type="text" 
+                      value={data.site.client}
+                      onChange={(e) => updateSite('client', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Preposto al Montaggio</label>
+                    <input 
+                      type="text" 
+                      value={data.site.manager}
+                      onChange={(e) => updateSite('manager', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Data Inizio Lavori</label>
+                    <input 
+                      type="date" 
+                      value={data.site.startDate}
+                      onChange={(e) => updateSite('startDate', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <button onClick={() => setActiveStep('company')} className="text-zinc-500 font-medium hover:text-zinc-900 transition-all">Indietro</button>
+                  <button onClick={() => setActiveStep('scaffolding')} className="flex items-center gap-2 bg-zinc-900 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-zinc-800 transition-all">
+                    Prossimo <ChevronRight size={16} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {activeStep === 'scaffolding' && (
+              <motion.div
+                key="scaffolding"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight mb-1">Specifiche Tecniche</h2>
+                  <p className="text-zinc-500 text-sm">Dettagli del sistema di ponteggio utilizzato.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Tipologia</label>
+                    <select 
+                      value={data.scaffolding.type}
+                      onChange={(e) => updateScaffolding('type', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    >
+                      <option>Telai prefabbricati</option>
+                      <option>Tubo e giunto</option>
+                      <option>Multidirezionale</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Marca</label>
+                    <input 
+                      type="text" 
+                      value={data.scaffolding.brand}
+                      onChange={(e) => updateScaffolding('brand', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                      placeholder="Esempio: Pilosio, Marcegaglia"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Modello</label>
+                    <input 
+                      type="text" 
+                      value={data.scaffolding.model}
+                      onChange={(e) => updateScaffolding('model', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Altezza Massima (m)</label>
+                    <input 
+                      type="number" 
+                      value={data.scaffolding.maxHeight}
+                      onChange={(e) => updateScaffolding('maxHeight', parseFloat(e.target.value))}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <button onClick={() => setActiveStep('site')} className="text-zinc-500 font-medium hover:text-zinc-900 transition-all">Indietro</button>
+                  <button onClick={() => setActiveStep('facades')} className="flex items-center gap-2 bg-zinc-900 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-zinc-800 transition-all">
+                    Prossimo <ChevronRight size={16} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {activeStep === 'facades' && (
+              <motion.div
+                key="facades"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-tight mb-1">Facciate e Rilievi</h2>
+                    <p className="text-zinc-500 text-sm">Gestisci le facciate dell'edificio e carica le foto.</p>
+                  </div>
+                  <button 
+                    onClick={addFacade}
+                    className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-all"
+                  >
+                    <Plus size={16} /> Aggiungi Facciata
+                  </button>
+                </div>
+
+                <div className="space-y-8">
+                  {data.scaffolding.facades.map((facade, index) => (
+                    <div key={facade.id} className="bg-white border border-zinc-200 rounded-2xl p-8 shadow-sm space-y-8">
+                      <div className="flex justify-between items-center border-b border-zinc-100 pb-6">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-zinc-900 flex items-center justify-center text-white font-black text-sm">
+                            {index + 1}
+                          </div>
+                          <input 
+                            type="text" 
+                            value={facade.name}
+                            onChange={(e) => updateFacade(facade.id, 'name', e.target.value)}
+                            className="text-xl font-black bg-transparent border-none focus:ring-0 p-0 w-64 tracking-tight"
+                          />
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-3 bg-zinc-50 px-4 py-2 rounded-xl border border-zinc-100">
+                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Larghezza</span>
+                            <input 
+                              type="number" 
+                              value={facade.width}
+                              onChange={(e) => updateFacade(facade.id, 'width', parseFloat(e.target.value))}
+                              className="w-16 bg-transparent text-sm font-black focus:outline-none"
+                            />
+                            <span className="text-[10px] font-black text-zinc-400 uppercase">m</span>
+                          </div>
+                          <div className="flex items-center gap-3 bg-zinc-50 px-4 py-2 rounded-xl border border-zinc-100">
+                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Altezza</span>
+                            <input 
+                              type="number" 
+                              value={facade.height}
+                              onChange={(e) => updateFacade(facade.id, 'height', parseFloat(e.target.value))}
+                              className="w-16 bg-transparent text-sm font-black focus:outline-none"
+                            />
+                            <span className="text-[10px] font-black text-zinc-400 uppercase">m</span>
+                          </div>
+                          <button 
+                            onClick={() => removeFacade(facade.id)}
+                            className="p-2 text-zinc-300 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest">Progettazione Sovrapposizione Ponteggio</label>
+                          {!facade.photo && (
+                            <div className="relative">
+                              <button className="flex items-center gap-2 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-xs font-black hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200">
+                                <Camera size={16} />
+                                CARICA FOTO PROSPETTO
+                              </button>
+                              <input 
+                                type="file" 
+                                accept="image/*"
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => updateFacade(facade.id, 'photo', reader.result as string);
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
+                          {facade.photo && (
+                            <button 
+                              onClick={() => updateFacade(facade.id, 'photo', undefined)}
+                              className="text-[10px] font-black text-red-500 uppercase hover:underline tracking-widest"
+                            >
+                              Elimina e Cambia Foto
+                            </button>
+                          )}
+                        </div>
+
+                        {facade.photo ? (
+                          <div className="flex justify-center">
+                            <ScaffoldingOverlay 
+                              imageSrc={facade.photo}
+                              facadeWidth={facade.width}
+                              facadeHeight={facade.height}
+                              initialConfig={facade.overlayConfig}
+                              onUpdate={(config) => updateFacade(facade.id, 'overlayConfig', config)}
+                            />
+                          </div>
+                        ) : (
+                          <div className="h-[450px] bg-zinc-50 border-2 border-dashed border-zinc-200 rounded-3xl flex flex-col items-center justify-center gap-4 text-zinc-400">
+                            <div className="w-20 h-20 rounded-full bg-zinc-100 flex items-center justify-center">
+                              <ImageIcon size={40} className="opacity-20" />
+                            </div>
+                            <div className="text-center space-y-1">
+                              <p className="text-sm font-black text-zinc-500 uppercase tracking-tight">Nessuna foto caricata</p>
+                              <p className="text-xs text-zinc-400">Carica la foto della facciata per iniziare la progettazione in scala</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <button
-              onClick={downloadJson}
-              className="mt-4 bg-blue-600 text-white py-3 px-6 rounded-md hover:bg-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              Download JSON
-            </button>
-          </div>
-        )}
-      </div>
+
+                  {data.scaffolding.facades.length === 0 && (
+                    <div className="text-center py-20 bg-white border border-dashed border-zinc-200 rounded-2xl">
+                      <ImageIcon size={48} className="mx-auto text-zinc-200 mb-4" />
+                      <p className="text-zinc-500 font-medium">Nessuna facciata aggiunta</p>
+                      <p className="text-zinc-400 text-sm">Inizia aggiungendo la prima facciata del cantiere.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-between pt-8">
+                  <button onClick={() => setActiveStep('scaffolding')} className="text-zinc-500 font-medium hover:text-zinc-900 transition-all">Indietro</button>
+                  <button 
+                    disabled={data.scaffolding.facades.length === 0}
+                    onClick={handleGenerateProcedures} 
+                    className="flex items-center gap-2 bg-zinc-900 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-zinc-800 disabled:opacity-50 transition-all"
+                  >
+                    {isGenerating ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
+                    Genera Documento
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {activeStep === 'preview' && (
+              <motion.div
+                key="preview"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-tight mb-1">Anteprima Documento</h2>
+                    <p className="text-zinc-500 text-sm">Controlla il PiMUS prima di scaricare il PDF.</p>
+                  </div>
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-all"
+                  >
+                    <Download size={16} /> Scarica PDF
+                  </button>
+                </div>
+
+                <div id="pimus-document" className="bg-white shadow-2xl rounded-sm p-12 min-h-[1122px] text-zinc-800 print:shadow-none print:p-0">
+                  {/* Header */}
+                  <div className="border-b-4 border-zinc-900 pb-8 mb-12 flex justify-between items-start">
+                    <div>
+                      <h1 className="text-4xl font-black uppercase tracking-tighter mb-2">Pi.M.U.S.</h1>
+                      <p className="text-zinc-500 font-medium">Piano di Montaggio, Uso e Smontaggio</p>
+                      <p className="text-xs text-zinc-400 mt-1">D.Lgs 81/08 - Allegato XXII</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold">{data.company.name || "NOME IMPRESA"}</p>
+                      <p className="text-xs text-zinc-500">{data.company.address}</p>
+                      <p className="text-xs text-zinc-500">P.IVA: {data.company.vat}</p>
+                    </div>
+                  </div>
+
+                  {/* Site Info Grid */}
+                  <div className="grid grid-cols-2 gap-12 mb-12">
+                    <section>
+                      <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Dati Cantiere</h3>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-zinc-400">Ubicazione</p>
+                          <p className="text-sm font-semibold">{data.site.address || "Non specificato"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-zinc-400">Committente</p>
+                          <p className="text-sm font-semibold">{data.site.client || "Non specificato"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-zinc-400">Inizio Lavori</p>
+                          <p className="text-sm font-semibold">{data.site.startDate || "Non specificato"}</p>
+                        </div>
+                      </div>
+                    </section>
+                    <section>
+                      <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Specifiche Tecniche</h3>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-zinc-400">Sistema</p>
+                          <p className="text-sm font-semibold">{data.scaffolding.type}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-zinc-400">Marca e Modello</p>
+                          <p className="text-sm font-semibold">{data.scaffolding.brand} {data.scaffolding.model}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-zinc-400">Altezza Max</p>
+                          <p className="text-sm font-semibold">{data.scaffolding.maxHeight} m</p>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  {/* Safety Procedures (AI Generated) */}
+                  <section className="mb-12">
+                    <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Procedure di Sicurezza</h3>
+                    <div className="prose prose-sm max-w-none text-zinc-700 leading-relaxed">
+                      {data.safetyProcedures ? (
+                        <div dangerouslySetInnerHTML={{ __html: data.safetyProcedures.replace(/\n/g, '<br/>') }} />
+                      ) : (
+                        <p className="italic text-zinc-400">Generazione procedure in corso...</p>
+                      )}
+                    </div>
+                  </section>
+
+                  {/* Illustrative Diagrams */}
+                  <section className="mb-12">
+                    <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Schemi Illustrativi Componenti</h3>
+                    <div className="grid grid-cols-3 gap-8">
+                      <div className="flex flex-col items-center text-center p-4 border border-zinc-100 rounded">
+                        <BasePlateDiagram />
+                        <p className="text-[10px] font-bold mt-2 uppercase">Basetta Regolabile</p>
+                        <p className="text-[8px] text-zinc-400 mt-1">Appoggio a terra con regolazione millimetrica</p>
+                      </div>
+                      <div className="flex flex-col items-center text-center p-4 border border-zinc-100 rounded">
+                        <GuardrailDiagram />
+                        <p className="text-[10px] font-bold mt-2 uppercase">Parapetto di Sicurezza</p>
+                        <p className="text-[8px] text-zinc-400 mt-1">Protezione contro le cadute dall'alto</p>
+                      </div>
+                      <div className="flex flex-col items-center text-center p-4 border border-zinc-100 rounded">
+                        <AnchorDiagram />
+                        <p className="text-[10px] font-bold mt-2 uppercase">Ancoraggio a Muro</p>
+                        <p className="text-[8px] text-zinc-400 mt-1">Fissaggio strutturale alla facciata</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Facades and Photos */}
+                  <section className="page-break-before">
+                    <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-6 border-b border-zinc-100 pb-1">Rilievi e Schemi di Montaggio</h3>
+                    <div className="space-y-12">
+                      {data.scaffolding.facades.map((facade) => (
+                        <div key={facade.id} className="space-y-4">
+                          <div className="flex justify-between items-end border-l-4 border-zinc-900 pl-4">
+                            <h4 className="text-xl font-bold">{facade.name}</h4>
+                            <p className="text-sm text-zinc-500">Dimensioni: {facade.width}m x {facade.height}m</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <p className="text-[10px] uppercase font-bold text-zinc-400">Stato Attuale</p>
+                              <div 
+                                className="bg-zinc-50 rounded border border-zinc-100 overflow-hidden"
+                                style={{ 
+                                  aspectRatio: facade.overlayConfig 
+                                    ? `${facade.overlayConfig.stageWidth} / ${facade.overlayConfig.stageHeight}` 
+                                    : '16/9' 
+                                }}
+                              >
+                                {facade.photo ? (
+                                  <img src={facade.photo} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-zinc-300">Nessuna foto</div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <p className="text-[10px] uppercase font-bold text-zinc-400">Schema Sviluppo Ponteggio</p>
+                              <div 
+                                className="bg-zinc-50 rounded border border-zinc-100 overflow-hidden relative"
+                                style={{ 
+                                  aspectRatio: facade.overlayConfig 
+                                    ? `${facade.overlayConfig.stageWidth} / ${facade.overlayConfig.stageHeight}` 
+                                    : '16/9' 
+                                }}
+                              >
+                                {facade.photo ? (
+                                  <>
+                                    <img src={facade.photo} className="w-full h-full object-cover" />
+                                    {facade.overlayConfig && (
+                                      <div 
+                                        style={{
+                                          position: 'absolute',
+                                          left: `${(facade.overlayConfig.x / facade.overlayConfig.stageWidth) * 100}%`,
+                                          top: `${(facade.overlayConfig.y / facade.overlayConfig.stageHeight) * 100}%`,
+                                          width: `${(facade.overlayConfig.width / facade.overlayConfig.stageWidth) * 100}%`,
+                                          height: `${(facade.overlayConfig.height / facade.overlayConfig.stageHeight) * 100}%`,
+                                          border: '1px solid #ef4444',
+                                          backgroundColor: `rgba(239, 68, 68, ${facade.overlayConfig.opacity * 0.1})`,
+                                          opacity: facade.overlayConfig.opacity,
+                                          display: 'flex',
+                                          flexDirection: 'column'
+                                        }}
+                                      >
+                                        {/* Scaffolding Grid Simulation for PDF (RED) */}
+                                        <div className="w-full h-full relative overflow-hidden">
+                                          {/* Terminal Part Simulation */}
+                                          <div className="absolute -top-[8%] left-0 w-full h-[8%] border-x border-red-500 border-t border-red-500 opacity-60" />
+                                          
+                                          {/* Grid */}
+                                          <div 
+                                            className="w-full h-full"
+                                            style={{
+                                              backgroundImage: `
+                                                linear-gradient(to right, #ef4444 1.5px, transparent 1.5px),
+                                                linear-gradient(to bottom, #ef4444 1.5px, transparent 1.5px)
+                                              `,
+                                              backgroundSize: `${100 / Math.ceil(facade.width / 1.8)}% ${100 / Math.ceil(facade.height / 2.0)}%`
+                                            }}
+                                          />
+                                          
+                                          {/* Toeboards simulation (RED) */}
+                                          {[...Array(Math.ceil(facade.height / 2.0))].map((_, i) => (
+                                            <div 
+                                              key={i}
+                                              className="absolute w-full bg-red-500/20 border-t border-red-500"
+                                              style={{
+                                                height: '4px',
+                                                top: `${((i + 1) * (100 / Math.ceil(facade.height / 2.0)))}%`,
+                                                transform: 'translateY(-4px)'
+                                              }}
+                                            />
+                                          ))}
+
+                                          {/* Base plates simulation (RED) */}
+                                          <div className="absolute bottom-0 w-full flex justify-between px-[2%]">
+                                            {[...Array(Math.ceil(facade.width / 1.8) + 1)].map((_, i) => (
+                                              <div key={i} className="w-3 h-1 bg-red-500" />
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-zinc-300">Nessuno schema</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* Allegato A Section */}
+                  <section className="page-break-before">
+                    <div className="border-4 border-zinc-900 p-8 text-center mb-12">
+                      <h2 className="text-5xl font-black uppercase mb-4">Allegato A</h2>
+                      <p className="text-xl font-bold">SCHEMI DI MONTAGGIO E SPECIFICHE TECNICHE DI DETTAGLIO</p>
+                    </div>
+                    <div className="bg-zinc-50 border border-zinc-200 p-12 rounded-lg text-center">
+                      <Construction size={64} className="mx-auto text-zinc-300 mb-6" />
+                      <p className="text-zinc-600 max-w-lg mx-auto leading-relaxed">
+                        In questa sezione vengono richiamati gli schemi di montaggio specifici forniti dal fabbricante ({data.scaffolding.brand}). 
+                        Le procedure qui contenute integrano quanto descritto nella relazione tecnica e costituiscono parte integrante del presente Pi.M.U.S.
+                      </p>
+                      <div className="mt-12 grid grid-cols-2 gap-8 text-left">
+                        <div className="p-6 bg-white border border-zinc-100 rounded shadow-sm">
+                          <h4 className="font-bold text-sm mb-2 uppercase tracking-tight">Sequenza Operativa</h4>
+                          <p className="text-xs text-zinc-500">Dettaglio passo-passo del posizionamento elementi strutturali, correnti e diagonali.</p>
+                        </div>
+                        <div className="p-6 bg-white border border-zinc-100 rounded shadow-sm">
+                          <h4 className="font-bold text-sm mb-2 uppercase tracking-tight">Distanziamenti</h4>
+                          <p className="text-xs text-zinc-500">Quote di montaggio, interassi e tolleranze ammesse dal libretto ministeriale.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Footer */}
+                  <div className="mt-20 pt-8 border-t border-zinc-100 flex justify-between items-end">
+                    <div className="text-[10px] text-zinc-400">
+                      <p>Documento generato il {new Date(data.createdAt).toLocaleDateString()}</p>
+                      <p>ID Documento: {data.id}</p>
+                    </div>
+                    <div className="flex gap-12">
+                      <div className="text-center">
+                        <div className="w-32 h-px bg-zinc-200 mb-2" />
+                        <p className="text-[9px] uppercase font-bold text-zinc-400">Firma del Preposto</p>
+                      </div>
+                      <div className="text-center">
+                        <div className="w-32 h-px bg-zinc-200 mb-2" />
+                        <p className="text-[9px] uppercase font-bold text-zinc-400">Timbro Impresa</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </main>
+
+      {/* Global CSS for printing */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          aside { display: none !important; }
+          main { padding: 0 !important; overflow: visible !important; background: white !important; }
+          .max-w-4xl { max-width: none !important; }
+          #pimus-document { box-shadow: none !important; border: none !important; padding: 0 !important; }
+          .page-break-before { page-break-before: always; }
+          button { display: none !important; }
+        }
+      `}} />
     </div>
   );
 }

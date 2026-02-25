@@ -1,5 +1,5 @@
 {
-  "name": "Data Extractor_7",
-  "description": "An application to extract and display structured data from text files, with advanced keyword filtering (singular/plural) and highlighting.",
+  "name": "PiMUS Pro - Gestore Piani di Montaggio",
+  "description": "Applicazione professionale per la creazione di Piani di Montaggio, Uso e Smontaggio (Pi.M.U.S.) per ponteggi, con schemi illustrativi e download PDF.",
   "requestFramePermissions": []
 }

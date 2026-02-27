@@ -17,14 +17,20 @@ import {
   Trash2,
   ChevronRight,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Upload,
+  Save,
+  FolderOpen,
+  FileDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
-import { PiMUSData, FacadeInfo } from './types';
+import { PiMUSData, FacadeInfo, AnchorPoint, SiteInfo, PlanMarker } from './types';
 import { generateSafetyProcedures } from './services/geminiService';
-import { BasePlateDiagram, GuardrailDiagram, AnchorDiagram } from './components/ScaffoldingDiagrams';
+import { BasePlateDiagram, GuardrailDiagram, AnchorDiagram, EarthingDiagram } from './components/ScaffoldingDiagrams';
 import { ScaffoldingOverlay } from './components/ScaffoldingOverlay';
+import { SitePlanOverlay } from './components/SitePlanOverlay';
+import { SOIL_TYPES, BASE_ELEMENTS, EARTHING_SYSTEMS } from './constants';
 
 // --- Components ---
 
@@ -63,8 +69,25 @@ export default function App() {
     id: Math.random().toString(36).substr(2, 9),
     createdAt: new Date().toISOString(),
     company: { name: '', address: '', vat: '', phone: '', email: '' },
-    site: { address: '', client: '', manager: '', startDate: '' },
-    scaffolding: { type: 'Telai prefabbricati', brand: '', model: '', maxHeight: 0, facades: [] },
+    site: { address: '', client: '', manager: '', startDate: '', employer: '', employerAddress: '', employerTaxCode: '', sitePlan: '' },
+    team: [''],
+    scaffolding: { 
+      type: 'Telai prefabbricati', 
+      brand: '', 
+      model: '', 
+      maxHeight: 0, 
+      moduleWidth: 1.80,
+      moduleHeight: 2.00,
+      specialPieces: '',
+      hasShadingNet: false,
+      hasNightLights: true,
+      preposto: '',
+      facades: [],
+      soilType: 'Terreno compatto/Asfalto',
+      baseElements: 'Basette regolabili e tavoloni in legno S10',
+      earthingSystem: 'Collegamento a terra tramite picchetti in rame',
+      signage: ['Cartello di cantiere', 'Segnaletica di divieto', 'Luci notturne']
+    },
     safetyProcedures: ''
   });
 
@@ -72,8 +95,34 @@ export default function App() {
     setData(prev => ({ ...prev, company: { ...prev.company, [field]: value } }));
   };
 
-  const updateSite = (field: string, value: string) => {
+  const updateSite = (field: keyof SiteInfo, value: any) => {
     setData(prev => ({ ...prev, site: { ...prev.site, [field]: value } }));
+  };
+
+  const handleSaveProject = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `PiMUS_${data.site.address || 'Progetto'}_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLoadProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const loadedData = JSON.parse(event.target?.result as string);
+          setData(loadedData);
+        } catch (err) {
+          alert("Errore nel caricamento del file. Assicurati che sia un file JSON valido di PiMUS Pro.");
+        }
+      };
+      reader.readAsText(file);
+    }
   };
 
   const updateScaffolding = (field: string, value: any) => {
@@ -85,13 +134,27 @@ export default function App() {
       id: Math.random().toString(36).substr(2, 9),
       name: `Facciata ${data.scaffolding.facades.length + 1}`,
       width: 0,
-      height: 0
+      height: 0,
+      anchors: [],
+      erasedPaths: []
     };
     setData(prev => ({
       ...prev,
       scaffolding: {
         ...prev.scaffolding,
         facades: [...prev.scaffolding.facades, newFacade]
+      }
+    }));
+  };
+
+  const updateFacadeAnchors = (facadeId: string, anchors: AnchorPoint[]) => {
+    setData(prev => ({
+      ...prev,
+      scaffolding: {
+        ...prev.scaffolding,
+        facades: prev.scaffolding.facades.map(f => 
+          f.id === facadeId ? { ...f, anchors } : f
+        )
       }
     }));
   };
@@ -122,7 +185,20 @@ export default function App() {
       const procedures = await generateSafetyProcedures(
         data.scaffolding.type,
         data.scaffolding.brand,
-        data.scaffolding.model
+        data.scaffolding.model,
+        data.scaffolding.moduleWidth,
+        data.scaffolding.moduleHeight,
+        data.scaffolding.specialPieces,
+        data.scaffolding.hasShadingNet,
+        data.scaffolding.hasNightLights,
+        data.scaffolding.preposto,
+        data.scaffolding.soilType,
+        data.scaffolding.baseElements,
+        data.scaffolding.earthingSystem,
+        data.scaffolding.signage || [],
+        data.site.employer,
+        data.site.employerAddress,
+        data.site.employerTaxCode
       );
       // Clean up markdown artifacts but preserve bullet points (•)
       const cleanProcedures = (procedures || '')
@@ -193,8 +269,25 @@ export default function App() {
             onClick={() => setActiveStep('facades')}
             completed={isStepComplete('facades')}
           />
-          <div className="mt-8 px-4">
+          <div className="mt-8 px-4 space-y-2">
             <div className="h-px bg-zinc-100 mb-4" />
+            <button
+              onClick={handleSaveProject}
+              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium"
+            >
+              <Save size={18} /> Salva Progetto
+            </button>
+            <label className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium cursor-pointer">
+              <FolderOpen size={18} /> Carica Progetto
+              <input type="file" accept=".json" onChange={handleLoadProject} className="hidden" />
+            </label>
+            <button
+              onClick={() => window.print()}
+              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium"
+            >
+              <FileDown size={18} /> Scarica PDF Relazione
+            </button>
+            <div className="h-px bg-zinc-100 my-4" />
             <SidebarItem 
               icon={Eye} 
               label="Anteprima PiMUS" 
@@ -280,6 +373,45 @@ export default function App() {
                     />
                   </div>
                 </div>
+
+                <div className="pt-8 border-t border-zinc-100">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold tracking-tight">Squadra di Lavoro</h3>
+                      <p className="text-zinc-500 text-xs">Elenca i lavoratori addetti al montaggio e smontaggio.</p>
+                    </div>
+                    <button 
+                      onClick={() => setData(prev => ({ ...prev, team: [...prev.team, ''] }))}
+                      className="flex items-center gap-2 text-xs font-bold text-zinc-900 hover:text-zinc-600 transition-colors"
+                    >
+                      <Plus size={14} />
+                      AGGIUNGI ADDETTO
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {data.team.map((member, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <input 
+                          type="text" 
+                          value={member}
+                          onChange={(e) => {
+                            const newTeam = [...data.team];
+                            newTeam[idx] = e.target.value;
+                            setData(prev => ({ ...prev, team: newTeam }));
+                          }}
+                          className="flex-1 bg-white border border-zinc-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-zinc-900 outline-none"
+                          placeholder={`Nome Addetto ${idx + 1}`}
+                        />
+                        <button 
+                          onClick={() => setData(prev => ({ ...prev, team: prev.team.filter((_, i) => i !== idx) }))}
+                          className="text-zinc-400 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex justify-end">
                   <button onClick={() => setActiveStep('site')} className="flex items-center gap-2 bg-zinc-900 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-zinc-800 transition-all">
                     Prossimo <ChevronRight size={16} />
@@ -336,6 +468,90 @@ export default function App() {
                       onChange={(e) => updateSite('startDate', e.target.value)}
                       className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
                     />
+                  </div>
+                  <div className="col-span-2 pt-4 border-t border-zinc-100">
+                    <h3 className="text-sm font-bold mb-4">Identificazione Datore di Lavoro (Esecutore)</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Nominativo / Ragione Sociale</label>
+                        <input 
+                          type="text" 
+                          value={data.site.employer}
+                          onChange={(e) => updateSite('employer', e.target.value)}
+                          className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 outline-none transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Codice Fiscale / P.IVA</label>
+                        <input 
+                          type="text" 
+                          value={data.site.employerTaxCode}
+                          onChange={(e) => updateSite('employerTaxCode', e.target.value)}
+                          className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 outline-none transition-all"
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-2">
+                        <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Indirizzo Sede Legale</label>
+                        <input 
+                          type="text" 
+                          value={data.site.employerAddress}
+                          onChange={(e) => updateSite('employerAddress', e.target.value)}
+                          className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 outline-none transition-all"
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-4 pt-4 border-t border-zinc-100">
+                        <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Pianta di Cantiere (Inquadramento Facciate)</label>
+                        <div className="space-y-4">
+                          {!data.site.sitePlan ? (
+                            <div className="flex items-center gap-4">
+                              <input 
+                                type="file" 
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      updateSite('sitePlan', reader.result as string);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                                className="hidden"
+                                id="site-plan-upload"
+                              />
+                              <label 
+                                htmlFor="site-plan-upload"
+                                className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-dashed border-zinc-200 rounded-xl p-8 cursor-pointer hover:border-zinc-900 transition-all"
+                              >
+                                <Upload size={24} className="text-zinc-400" />
+                                <span className="text-sm font-medium text-zinc-600">
+                                  Carica Pianta di Cantiere (Immagine)
+                                </span>
+                              </label>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              <div className="flex justify-between items-center">
+                                <p className="text-xs text-zinc-500 italic">Posiziona le frecce per indicare le facciate sulla pianta</p>
+                                <button 
+                                  onClick={() => updateSite('sitePlan', undefined)}
+                                  className="text-[10px] font-bold text-red-500 uppercase hover:underline"
+                                >
+                                  Rimuovi Pianta
+                                </button>
+                              </div>
+                              <SitePlanOverlay 
+                                image={data.site.sitePlan}
+                                markers={data.site.planMarkers || []}
+                                facades={data.scaffolding.facades}
+                                onUpdateMarkers={(markers) => updateSite('planMarkers', markers)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-between">
@@ -399,6 +615,133 @@ export default function App() {
                       onChange={(e) => updateScaffolding('maxHeight', parseFloat(e.target.value))}
                       className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Preposto al Montaggio</label>
+                    <input 
+                      type="text" 
+                      value={data.scaffolding.preposto}
+                      onChange={(e) => updateScaffolding('preposto', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                      placeholder="Nome del preposto (D.Lgs 81/08)"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Larghezza Modulo (m)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={data.scaffolding.moduleWidth}
+                      onChange={(e) => updateScaffolding('moduleWidth', parseFloat(e.target.value))}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Altezza Modulo (m)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={data.scaffolding.moduleHeight}
+                      onChange={(e) => updateScaffolding('moduleHeight', parseFloat(e.target.value))}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Mezze Misure / Pezzi Speciali</label>
+                    <textarea 
+                      value={data.scaffolding.specialPieces}
+                      onChange={(e) => updateScaffolding('specialPieces', e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all h-20"
+                      placeholder="Descrivi eventuali componenti speciali o mezze misure utilizzate..."
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-4">
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Dotazioni di Sicurezza Aggiuntive</label>
+                    <div className="flex gap-4">
+                      <button 
+                        onClick={() => updateScaffolding('hasShadingNet', !data.scaffolding.hasShadingNet)}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 transition-all font-bold text-xs",
+                          data.scaffolding.hasShadingNet 
+                            ? "bg-zinc-900 text-white border-zinc-900" 
+                            : "bg-white text-zinc-400 border-zinc-100 hover:border-zinc-200"
+                        )}
+                      >
+                        RETE OSCURANTE
+                      </button>
+                      <button 
+                        onClick={() => updateScaffolding('hasNightLights', !data.scaffolding.hasNightLights)}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 transition-all font-bold text-xs",
+                          data.scaffolding.hasNightLights 
+                            ? "bg-amber-500 text-white border-amber-500" 
+                            : "bg-white text-zinc-400 border-zinc-100 hover:border-zinc-200"
+                        )}
+                      >
+                        LUCI NOTTURNE
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-8 border-t border-zinc-100 space-y-6">
+                  <h3 className="text-lg font-bold tracking-tight">Dettagli D.Lgs 81/08 (Specifiche di Progetto)</h3>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Qualità del Terreno</label>
+                      <select 
+                        value={data.scaffolding.soilType}
+                        onChange={(e) => updateScaffolding('soilType', e.target.value)}
+                        className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 outline-none"
+                      >
+                        {SOIL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Elementi di Base</label>
+                      <select 
+                        value={data.scaffolding.baseElements}
+                        onChange={(e) => updateScaffolding('baseElements', e.target.value)}
+                        className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 outline-none"
+                      >
+                        {BASE_ELEMENTS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Sistema di Messa a Terra</label>
+                      <select 
+                        value={data.scaffolding.earthingSystem}
+                        onChange={(e) => updateScaffolding('earthingSystem', e.target.value)}
+                        className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 outline-none"
+                      >
+                        {EARTHING_SYSTEMS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Segnaletica e Cartellonistica</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['Cartello di cantiere', 'Segnaletica di divieto', 'Luci notturne', 'Nastro segnaletico', 'Segnali di obbligo'].map(item => (
+                          <button
+                            key={item}
+                            onClick={() => {
+                              const current = data.scaffolding.signage || [];
+                              const next = current.includes(item) 
+                                ? current.filter(i => i !== item)
+                                : [...current, item];
+                              updateScaffolding('signage', next);
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all border",
+                              data.scaffolding.signage?.includes(item)
+                                ? "bg-zinc-900 text-white border-zinc-900"
+                                : "bg-white text-zinc-400 border-zinc-200 hover:border-zinc-400"
+                            )}
+                          >
+                            {item}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-between">
@@ -467,6 +810,10 @@ export default function App() {
                             />
                             <span className="text-[10px] font-black text-zinc-400 uppercase">m</span>
                           </div>
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Ancoraggi Consigliati</span>
+                            <span className="text-sm font-black text-emerald-600">{Math.ceil((facade.width * facade.height) / 18)}</span>
+                          </div>
                           <button 
                             onClick={() => removeFacade(facade.id)}
                             className="p-2 text-zinc-300 hover:text-red-500 transition-colors"
@@ -516,6 +863,15 @@ export default function App() {
                               imageSrc={facade.photo}
                               facadeWidth={facade.width}
                               facadeHeight={facade.height}
+                              moduleWidth={data.scaffolding.moduleWidth}
+                              moduleHeight={data.scaffolding.moduleHeight}
+                              hasShadingNet={data.scaffolding.hasShadingNet}
+                              hasNightLights={data.scaffolding.hasNightLights}
+                              anchors={facade.anchors || []}
+                              erasedPaths={facade.erasedPaths}
+                              onUpdateAnchors={(anchors) => updateFacadeAnchors(facade.id, anchors)}
+                              onUpdateErasedPaths={(paths) => updateFacade(facade.id, 'erasedPaths', paths)}
+                              onUpdateShadingNet={(hasNet) => updateScaffolding('hasShadingNet', hasNet)}
                               initialConfig={facade.overlayConfig}
                               onUpdate={(config) => updateFacade(facade.id, 'overlayConfig', config)}
                             />
@@ -579,240 +935,535 @@ export default function App() {
                   </button>
                 </div>
 
-                <div id="pimus-document" className="bg-white shadow-2xl rounded-sm p-12 min-h-[1122px] text-zinc-800 print:shadow-none print:p-0">
-                  {/* Header */}
-                  <div className="border-b-4 border-zinc-900 pb-8 mb-12 flex justify-between items-start">
-                    <div>
-                      <h1 className="text-4xl font-black uppercase tracking-tighter mb-2">Pi.M.U.S.</h1>
-                      <p className="text-zinc-500 font-medium">Piano di Montaggio, Uso e Smontaggio</p>
-                      <p className="text-xs text-zinc-400 mt-1">D.Lgs 81/08 - Allegato XXII</p>
+                <div id="pimus-document" className="bg-white shadow-2xl rounded-sm text-zinc-800 print:shadow-none print:p-0 font-sans">
+                  {/* PAGE 1: COVER */}
+                  <div className="p-16 min-h-[1122px] flex flex-col justify-between border-b border-zinc-100 relative">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-1">
+                        <p className="text-lg font-black tracking-tighter">{data.company.name || "NOME IMPRESA"}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase">{data.company.address}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase">P.IVA: {data.company.vat}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase">TEL: {data.company.phone}</p>
+                      </div>
+                      <div className="w-24 h-24 bg-zinc-50 border border-zinc-100 rounded-xl flex items-center justify-center text-[10px] text-zinc-300 font-bold uppercase text-center p-2">
+                        Logo Aziendale
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold">{data.company.name || "NOME IMPRESA"}</p>
-                      <p className="text-xs text-zinc-500">{data.company.address}</p>
-                      <p className="text-xs text-zinc-500">P.IVA: {data.company.vat}</p>
+
+                    <div className="space-y-12 py-20">
+                      <div className="border-y-4 border-zinc-900 py-12 text-center">
+                        <h1 className="text-5xl font-black uppercase tracking-tighter mb-4">Pi.M.U.S.</h1>
+                        <p className="text-xl font-bold text-zinc-600 uppercase tracking-widest">Piano di Montaggio, Uso e Smontaggio</p>
+                        <p className="text-sm text-zinc-400 mt-4 font-medium italic">Conforme al D.Lgs 81/2008 e s.m.i. - Allegato XXII</p>
+                      </div>
+
+                      <div className="max-w-2xl mx-auto space-y-8">
+                        <div className="bg-zinc-50 p-8 rounded-2xl border border-zinc-100">
+                          <p className="text-[10px] uppercase font-black text-zinc-400 mb-4 tracking-widest text-center">Oggetto dell'Opera</p>
+                          <p className="text-2xl font-bold text-center uppercase leading-tight">
+                            PONTEGGIO METALLICO FISSO PER LAVORI DI MANUTENZIONE PRESSO:
+                          </p>
+                          <p className="text-xl font-black text-center mt-4 text-zinc-900">
+                            {data.site.address || "INDIRIZZO NON SPECIFICATO"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-end border-t border-zinc-100 pt-8">
+                      <div className="space-y-1">
+                        <p className="text-[10px] uppercase font-bold text-zinc-400">Data Documento</p>
+                        <p className="text-sm font-bold">{new Date().toLocaleDateString('it-IT')}</p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <p className="text-[10px] uppercase font-bold text-zinc-400">Committente</p>
+                        <p className="text-sm font-bold uppercase">{data.site.client || "NON SPECIFICATO"}</p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Site Info Grid */}
-                  <div className="grid grid-cols-2 gap-12 mb-12">
-                    <section>
-                      <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Dati Cantiere</h3>
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-zinc-400">Ubicazione</p>
-                          <p className="text-sm font-semibold">{data.site.address || "Non specificato"}</p>
+                  {/* PAGE 2: INDICE */}
+                  <div className="p-16 min-h-[1122px] space-y-12 page-break-before relative">
+                    <h2 className="text-3xl font-black uppercase border-b-4 border-zinc-900 pb-4 mb-12">Sommario / Indice</h2>
+                    <div className="space-y-6">
+                      {[
+                        { title: "1. Identificazione dei Soggetti", page: "4" },
+                        { title: "2. Identificazione del Ponteggio", page: "4" },
+                        { title: "3. Pianta di Cantiere e Inquadramento", page: "3" },
+                        { title: "4. ALLEGATO A: Libretto Tecnico e Schemi", page: "5" },
+                        { title: "5. Procedure Operative e Sicurezza", page: "6+" },
+                        { title: "Appendice A: Verifiche degli Elementi", page: "Fine" },
+                      ].map((item, i) => (
+                        <div key={i} className="flex items-end gap-4">
+                          <span className="text-lg font-bold text-zinc-900 whitespace-nowrap">{item.title}</span>
+                          <div className="flex-1 border-b-2 border-dotted border-zinc-200 mb-1.5" />
+                          <span className="text-lg font-black text-zinc-400">pag. {item.page}</span>
                         </div>
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-zinc-400">Committente</p>
-                          <p className="text-sm font-semibold">{data.site.client || "Non specificato"}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-zinc-400">Inizio Lavori</p>
-                          <p className="text-sm font-semibold">{data.site.startDate || "Non specificato"}</p>
-                        </div>
-                      </div>
-                    </section>
-                    <section>
-                      <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Specifiche Tecniche</h3>
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-zinc-400">Sistema</p>
-                          <p className="text-sm font-semibold">{data.scaffolding.type}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-zinc-400">Marca e Modello</p>
-                          <p className="text-sm font-semibold">{data.scaffolding.brand} {data.scaffolding.model}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-zinc-400">Altezza Max</p>
-                          <p className="text-sm font-semibold">{data.scaffolding.maxHeight} m</p>
-                        </div>
-                      </div>
-                    </section>
+                      ))}
+                    </div>
+                    
+                    <div className="absolute bottom-16 left-16 right-16 flex justify-between items-center text-[10px] text-zinc-400 font-bold uppercase border-t border-zinc-100 pt-4">
+                      <span>PiMUS - {data.site.address}</span>
+                      <span>Pagina 2</span>
+                    </div>
                   </div>
 
-                  {/* Safety Procedures (AI Generated) */}
-                  <section className="mb-12">
-                    <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Procedure di Sicurezza</h3>
-                    <div className="prose prose-sm max-w-none text-zinc-700 leading-relaxed">
-                      {data.safetyProcedures ? (
-                        <div dangerouslySetInnerHTML={{ __html: data.safetyProcedures.replace(/\n/g, '<br/>') }} />
+                  {/* PAGE 3: PIANTA DI CANTIERE */}
+                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                    <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">3. Pianta di Cantiere e Inquadramento Facciate</h2>
+                    <p className="text-sm text-zinc-600 leading-relaxed mb-8">
+                      La presente sezione illustra l'inquadramento planimetrico dell'area di cantiere con l'indicazione numerica delle facciate oggetto di intervento e trattate nel dettaglio nell'Allegato A.
+                    </p>
+                    
+                    <div className="bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 min-h-[500px] flex items-center justify-center overflow-hidden relative">
+                      {data.site.sitePlan ? (
+                        <div className="relative w-full h-full">
+                          <img src={data.site.sitePlan} className="w-full h-full object-contain" />
+                          {/* Render Plan Markers (Arrows) */}
+                          {(data.site.planMarkers || []).map((marker) => (
+                            <div 
+                              key={marker.id}
+                              className="absolute"
+                              style={{
+                                left: `${(marker.x / 800) * 100}%`, // Assuming 800 is the base width from SitePlanOverlay
+                                top: `${(marker.y / 600) * 100}%`,  // Assuming 600 is the base height
+                                transform: `translate(-50%, -50%) rotate(${marker.rotation}deg)`,
+                              }}
+                            >
+                              <div className="relative">
+                                <div className="w-10 h-1 bg-zinc-900" />
+                                <div 
+                                  className="absolute right-0 top-1/2 -translate-y-1/2 border-y-[6px] border-y-transparent border-l-[10px] border-l-zinc-900" 
+                                  style={{ transform: 'translateX(100%)' }}
+                                />
+                                <div 
+                                  className="absolute -left-4 -top-4 w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center text-[10px] text-white font-black"
+                                  style={{ transform: `rotate(${-marker.rotation}deg)` }}
+                                >
+                                  {marker.label}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
-                        <p className="italic text-zinc-400">Generazione procedure in corso...</p>
+                        <div className="text-center space-y-4 p-12">
+                          <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto">
+                            <Upload className="text-zinc-300" />
+                          </div>
+                          <p className="text-zinc-400 font-bold uppercase text-xs tracking-widest">Nessuna Pianta Caricata</p>
+                          <p className="text-[10px] text-zinc-300">Carica la pianta nel modulo "Dati Cantiere"</p>
+                        </div>
                       )}
                     </div>
-                  </section>
 
-                  {/* Illustrative Diagrams */}
-                  <section className="mb-12">
-                    <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-4 border-b border-zinc-100 pb-1">Schemi Illustrativi Componenti</h3>
-                    <div className="grid grid-cols-3 gap-8">
-                      <div className="flex flex-col items-center text-center p-4 border border-zinc-100 rounded">
-                        <BasePlateDiagram />
-                        <p className="text-[10px] font-bold mt-2 uppercase">Basetta Regolabile</p>
-                        <p className="text-[8px] text-zinc-400 mt-1">Appoggio a terra con regolazione millimetrica</p>
-                      </div>
-                      <div className="flex flex-col items-center text-center p-4 border border-zinc-100 rounded">
-                        <GuardrailDiagram />
-                        <p className="text-[10px] font-bold mt-2 uppercase">Parapetto di Sicurezza</p>
-                        <p className="text-[8px] text-zinc-400 mt-1">Protezione contro le cadute dall'alto</p>
-                      </div>
-                      <div className="flex flex-col items-center text-center p-4 border border-zinc-100 rounded">
-                        <AnchorDiagram />
-                        <p className="text-[10px] font-bold mt-2 uppercase">Ancoraggio a Muro</p>
-                        <p className="text-[8px] text-zinc-400 mt-1">Fissaggio strutturale alla facciata</p>
+                    <div className="mt-8 p-6 bg-zinc-900 text-white rounded-xl">
+                      <p className="text-[10px] uppercase font-black mb-4 tracking-widest text-zinc-400">Elenco Facciate Trattate</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        {data.scaffolding.facades.map((f, i) => (
+                          <div key={f.id} className="flex items-center gap-3">
+                            <span className="w-6 h-6 bg-white/20 rounded flex items-center justify-center text-xs font-black">{i + 1}</span>
+                            <span className="text-xs font-bold uppercase">{f.name}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </section>
 
-                  {/* Facades and Photos */}
-                  <section className="page-break-before">
-                    <h3 className="text-[10px] uppercase font-black text-zinc-400 tracking-widest mb-6 border-b border-zinc-100 pb-1">Rilievi e Schemi di Montaggio</h3>
+                    <div className="absolute bottom-16 left-16 right-16 flex justify-between items-center text-[10px] text-zinc-400 font-bold uppercase border-t border-zinc-100 pt-4">
+                      <span>PiMUS - {data.site.address}</span>
+                      <span>Pagina 3</span>
+                    </div>
+                  </div>
+
+                  {/* PAGE 4: ADMINISTRATIVE */}
+                  <div className="p-16 min-h-[1122px] space-y-12 page-break-before relative">
+                    <section>
+                      <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">1. Identificazione dei Soggetti</h2>
+                      <div className="grid grid-cols-1 gap-8">
+                        <div className="bg-zinc-50 p-6 rounded-xl border border-zinc-100">
+                          <p className="text-[10px] uppercase font-black text-zinc-400 mb-3">1.1 Redattore del PiMUS</p>
+                          <p className="text-sm font-bold">{data.site.manager || "NON SPECIFICATO"}</p>
+                          <p className="text-xs text-zinc-500 mt-1">Incaricato dalla ditta esecutrice</p>
+                        </div>
+
+                        <div className="bg-zinc-50 p-6 rounded-xl border border-zinc-100">
+                          <p className="text-[10px] uppercase font-black text-zinc-400 mb-3">1.2 Datore di Lavoro (Ditta Esecutrice)</p>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase">Ragione Sociale</p>
+                              <p className="text-sm font-bold uppercase">{data.site.employer || data.company.name}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase">Codice Fiscale / P.IVA</p>
+                              <p className="text-sm font-bold">{data.site.employerTaxCode || data.company.vat}</p>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase">Sede Legale</p>
+                              <p className="text-sm font-bold uppercase">{data.site.employerAddress || data.company.address}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-zinc-50 p-6 rounded-xl border border-zinc-100">
+                          <p className="text-[10px] uppercase font-black text-zinc-400 mb-3">1.3 Squadra Addetta alle Operazioni</p>
+                          <div className="space-y-4">
+                            <div className="border-b border-zinc-200 pb-3">
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase">Preposto al Montaggio</p>
+                              <p className="text-sm font-black text-emerald-700 uppercase">{data.scaffolding.preposto || "NON SPECIFICATO"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase">Lavoratori Addetti</p>
+                              <div className="grid grid-cols-2 gap-2 mt-2">
+                                {data.team.filter(m => m).map((member, i) => (
+                                  <div key={i} className="text-xs font-bold text-zinc-700 flex items-center gap-2">
+                                    <span className="w-4 h-4 bg-zinc-200 rounded-full flex items-center justify-center text-[8px]">{i+1}</span>
+                                    {member}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">2. Identificazione del Ponteggio</h2>
+                      <div className="grid grid-cols-2 gap-8">
+                        <div className="space-y-4">
+                          <div>
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase">Tipologia Sistema</p>
+                            <p className="text-sm font-bold uppercase">{data.scaffolding.type}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase">Marca e Modello</p>
+                            <p className="text-sm font-bold uppercase">{data.scaffolding.brand} {data.scaffolding.model}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase">Dimensioni Modulo</p>
+                            <p className="text-sm font-bold">{data.scaffolding.moduleWidth}m (L) x {data.scaffolding.moduleHeight}m (H)</p>
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase">Altezza Massima</p>
+                            <p className="text-sm font-bold">{data.scaffolding.maxHeight} m</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase">Messa a Terra</p>
+                            <p className="text-xs font-medium">{data.scaffolding.earthingSystem}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase">Dotazioni Speciali</p>
+                            <div className="flex gap-2 mt-1">
+                              {data.scaffolding.hasShadingNet && <span className="text-[8px] bg-zinc-900 text-white px-2 py-0.5 rounded font-black">RETE</span>}
+                              {data.scaffolding.hasNightLights && <span className="text-[8px] bg-amber-500 text-white px-2 py-0.5 rounded font-black">LUCI</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <div className="absolute bottom-16 left-16 right-16 flex justify-between items-center text-[10px] text-zinc-400 font-bold uppercase border-t border-zinc-100 pt-4">
+                      <span>PiMUS - {data.site.address}</span>
+                      <span>Pagina 4</span>
+                    </div>
+                  </div>
+
+                  {/* PAGE 5: ALLEGATO A (SCHEMI TECNICI) */}
+                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                    <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-4 text-center">ALLEGATO A: Libretto Tecnico e Schemi di Montaggio</h2>
+                    <p className="text-xs text-zinc-500 text-center italic mb-8">Rappresentazione grafica in scala del ponteggio e posizionamento ancoraggi</p>
+                    
                     <div className="space-y-12">
                       {data.scaffolding.facades.map((facade) => (
                         <div key={facade.id} className="space-y-4">
                           <div className="flex justify-between items-end border-l-4 border-zinc-900 pl-4">
-                            <h4 className="text-xl font-bold">{facade.name}</h4>
-                            <p className="text-sm text-zinc-500">Dimensioni: {facade.width}m x {facade.height}m</p>
+                            <h4 className="text-xl font-bold uppercase">{facade.name}</h4>
+                            <p className="text-xs text-zinc-500 font-mono">DIM: {facade.width}m x {facade.height}m</p>
                           </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <p className="text-[10px] uppercase font-bold text-zinc-400">Stato Attuale</p>
-                              <div 
-                                className="bg-zinc-50 rounded border border-zinc-100 overflow-hidden"
-                                style={{ 
-                                  aspectRatio: facade.overlayConfig 
-                                    ? `${facade.overlayConfig.stageWidth} / ${facade.overlayConfig.stageHeight}` 
-                                    : '16/9' 
-                                }}
-                              >
-                                {facade.photo ? (
-                                  <img src={facade.photo} className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-zinc-300">Nessuna foto</div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-[10px] uppercase font-bold text-zinc-400">Schema Sviluppo Ponteggio</p>
-                              <div 
-                                className="bg-zinc-50 rounded border border-zinc-100 overflow-hidden relative"
-                                style={{ 
-                                  aspectRatio: facade.overlayConfig 
-                                    ? `${facade.overlayConfig.stageWidth} / ${facade.overlayConfig.stageHeight}` 
-                                    : '16/9' 
-                                }}
-                              >
-                                {facade.photo ? (
-                                  <>
-                                    <img src={facade.photo} className="w-full h-full object-cover" />
-                                    {facade.overlayConfig && (
-                                      <div 
-                                        style={{
-                                          position: 'absolute',
-                                          left: `${(facade.overlayConfig.x / facade.overlayConfig.stageWidth) * 100}%`,
-                                          top: `${(facade.overlayConfig.y / facade.overlayConfig.stageHeight) * 100}%`,
-                                          width: `${(facade.overlayConfig.width / facade.overlayConfig.stageWidth) * 100}%`,
-                                          height: `${(facade.overlayConfig.height / facade.overlayConfig.stageHeight) * 100}%`,
-                                          border: '1px solid #ef4444',
-                                          backgroundColor: `rgba(239, 68, 68, ${facade.overlayConfig.opacity * 0.1})`,
-                                          opacity: facade.overlayConfig.opacity,
-                                          display: 'flex',
-                                          flexDirection: 'column'
-                                        }}
-                                      >
-                                        {/* Scaffolding Grid Simulation for PDF (RED) */}
-                                        <div className="w-full h-full relative overflow-hidden">
-                                          {/* Terminal Part Simulation */}
-                                          <div className="absolute -top-[8%] left-0 w-full h-[8%] border-x border-red-500 border-t border-red-500 opacity-60" />
-                                          
-                                          {/* Grid */}
-                                          <div 
-                                            className="w-full h-full"
-                                            style={{
-                                              backgroundImage: `
-                                                linear-gradient(to right, #ef4444 1.5px, transparent 1.5px),
-                                                linear-gradient(to bottom, #ef4444 1.5px, transparent 1.5px)
-                                              `,
-                                              backgroundSize: `${100 / Math.ceil(facade.width / 1.8)}% ${100 / Math.ceil(facade.height / 2.0)}%`
-                                            }}
-                                          />
-                                          
-                                          {/* Toeboards simulation (RED) */}
-                                          {[...Array(Math.ceil(facade.height / 2.0))].map((_, i) => (
-                                            <div 
-                                              key={i}
-                                              className="absolute w-full bg-red-500/20 border-t border-red-500"
-                                              style={{
-                                                height: '4px',
-                                                top: `${((i + 1) * (100 / Math.ceil(facade.height / 2.0)))}%`,
-                                                transform: 'translateY(-4px)'
-                                              }}
-                                            />
-                                          ))}
+                          
+                          <div 
+                            className="bg-zinc-50 rounded-2xl border border-zinc-100 overflow-hidden relative shadow-inner"
+                            style={{ 
+                              aspectRatio: facade.overlayConfig 
+                                ? `${facade.overlayConfig.stageWidth} / ${facade.overlayConfig.stageHeight}` 
+                                : '16/9' 
+                            }}
+                          >
+                            {facade.photo ? (
+                              <>
+                                <img src={facade.photo} className="w-full h-full object-contain" />
+                                {facade.erasedPaths?.map((path, i) => (
+                                  <svg 
+                                    key={i} 
+                                    className="absolute inset-0 w-full h-full pointer-events-none" 
+                                    viewBox={`0 0 ${facade.overlayConfig?.stageWidth || 800} ${facade.overlayConfig?.stageHeight || 600}`}
+                                    preserveAspectRatio="none"
+                                  >
+                                    <polyline
+                                      points={path.points.join(',')}
+                                      fill="none"
+                                      stroke="white"
+                                      strokeWidth={path.strokeWidth}
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                ))}
+                                {facade.overlayConfig && (
+                                  <div 
+                                    style={{
+                                      position: 'absolute',
+                                      left: `${(facade.overlayConfig.x / facade.overlayConfig.stageWidth) * 100}%`,
+                                      top: `${(facade.overlayConfig.y / facade.overlayConfig.stageHeight) * 100}%`,
+                                      width: `${(facade.overlayConfig.width / facade.overlayConfig.stageWidth) * 100}%`,
+                                      height: `${(facade.overlayConfig.height / facade.overlayConfig.stageHeight) * 100}%`,
+                                      border: '1.5px solid #ef4444',
+                                      backgroundColor: `rgba(239, 68, 68, ${facade.overlayConfig.opacity * 0.1})`,
+                                      opacity: facade.overlayConfig.opacity,
+                                    }}
+                                  >
+                                    <div className="w-full h-full relative overflow-hidden">
+                                      {/* Shading Net Simulation */}
+                                      {data.scaffolding.hasShadingNet && (
+                                        <div className="absolute inset-0 bg-zinc-900/30 z-0" />
+                                      )}
 
-                                          {/* Base plates simulation (RED) */}
-                                          <div className="absolute bottom-0 w-full flex justify-between px-[2%]">
-                                            {[...Array(Math.ceil(facade.width / 1.8) + 1)].map((_, i) => (
-                                              <div key={i} className="w-3 h-1 bg-red-500" />
+                                      {/* Detailed Scaffolding Structure */}
+                                      <div className="w-full h-full relative">
+                                        {/* Vertical Frames (Montanti) */}
+                                        {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth) + 1)].map((_, c) => (
+                                          <div 
+                                            key={`v-frame-${c}`}
+                                            className="absolute h-full bg-red-500"
+                                            style={{
+                                              width: '1.5px',
+                                              left: `${c * (100 / Math.ceil(facade.width / data.scaffolding.moduleWidth))}%`,
+                                              transform: 'translateX(-50%)'
+                                            }}
+                                          >
+                                            {/* Base Plate */}
+                                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-0.5 bg-red-500" />
+                                          </div>
+                                        ))}
+
+                                        {/* Horizontal Ledgers, Platforms, Toeboards, Guardrails */}
+                                        {[...Array(Math.ceil(facade.height / data.scaffolding.moduleHeight) + 1)].map((_, r) => {
+                                          const numRows = Math.ceil(facade.height / data.scaffolding.moduleHeight);
+                                          const rowHeightPercent = 100 / numRows;
+                                          const y = r * rowHeightPercent;
+                                          
+                                          return (
+                                            <React.Fragment key={`row-${r}`}>
+                                              {/* Ledger (Corrente) */}
+                                              <div 
+                                                className="absolute w-full bg-red-500"
+                                                style={{ height: '1px', top: `${y}%` }}
+                                              />
+                                              
+                                              {r > 0 && (
+                                                <>
+                                                  {/* Platform (Impalcato) */}
+                                                  <div 
+                                                    className="absolute w-full bg-slate-400"
+                                                    style={{ height: '2px', top: `${y}%`, transform: 'translateY(-2px)' }}
+                                                  />
+                                                  {/* Toeboard (Fermapiede) */}
+                                                  <div 
+                                                    className="absolute w-full bg-slate-500/60"
+                                                    style={{ height: '4px', top: `${y}%`, transform: 'translateY(-6px)' }}
+                                                  />
+                                                </>
+                                              )}
+
+                                              {r < numRows && (
+                                                <>
+                                                  {/* Guardrails (Parapetti) */}
+                                                  <div 
+                                                    className="absolute w-full border-t border-red-500/60"
+                                                    style={{ top: `${y + rowHeightPercent * 0.4}%` }}
+                                                  />
+                                                  <div 
+                                                    className="absolute w-full border-t border-red-500/60"
+                                                    style={{ top: `${y + rowHeightPercent * 0.7}%` }}
+                                                  />
+
+                                                  {/* Diagonals */}
+                                                  {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth))].map((_, c) => (
+                                                    <div 
+                                                      key={`diag-${r}-${c}`}
+                                                      className="absolute border-t border-red-500/20"
+                                                      style={{
+                                                        width: `${Math.sqrt(Math.pow(100 / Math.ceil(facade.width / data.scaffolding.moduleWidth), 2) + Math.pow(rowHeightPercent, 2))}%`,
+                                                        left: `${c * (100 / Math.ceil(facade.width / data.scaffolding.moduleWidth))}%`,
+                                                        top: `${y}%`,
+                                                        transform: `rotate(${Math.atan(rowHeightPercent / (100 / Math.ceil(facade.width / data.scaffolding.moduleWidth))) * (180 / Math.PI)}deg)`,
+                                                        transformOrigin: '0 0'
+                                                      }}
+                                                    />
+                                                  ))}
+
+                                                  {/* Ladders (Scalette) - Blue */}
+                                                  {r > 0 && (
+                                                    <div 
+                                                      className="absolute border-l border-blue-500/40"
+                                                      style={{
+                                                        left: `${(r % 2 === 0 ? 20 : 70)}%`,
+                                                        top: `${y}%`,
+                                                        height: `${rowHeightPercent}%`,
+                                                        width: '8%',
+                                                        transform: 'skewX(-15deg)',
+                                                        borderTop: '1px solid rgba(59, 130, 246, 0.4)'
+                                                      }}
+                                                    />
+                                                  )}
+                                                </>
+                                              )}
+                                            </React.Fragment>
+                                          );
+                                        })}
+
+                                        {/* Night Lights */}
+                                        {data.scaffolding.hasNightLights && (
+                                          <div 
+                                            className="absolute w-full flex justify-around px-[5%]"
+                                            style={{
+                                              top: `${100 / Math.ceil(facade.height / data.scaffolding.moduleHeight)}%`,
+                                              transform: 'translateY(-4px)'
+                                            }}
+                                          >
+                                            {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth) + 1)].map((_, i) => (
+                                              <div key={i} className="w-1 h-1 bg-amber-400 rounded-full shadow-[0_0_3px_#fbbf24] z-10" />
                                             ))}
                                           </div>
-                                        </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </>
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-zinc-300">Nessuno schema</div>
+
+                                      {/* Anchors (GREEN) */}
+                                      {(facade.anchors || []).map((anchor, index) => (
+                                        <div 
+                                          key={anchor.id}
+                                          className="absolute w-4 h-4 bg-emerald-500 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-[7px] text-white font-black"
+                                          style={{
+                                            left: `${(anchor.x / facade.overlayConfig!.width) * 100}%`,
+                                            top: `${(anchor.y / facade.overlayConfig!.height) * 100}%`,
+                                            transform: 'translate(-50%, -50%)'
+                                          }}
+                                        >
+                                          {index + 1}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
                                 )}
+                              </>
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-zinc-300">Nessuno schema</div>
+                            )}
+                          </div>
+                          
+                          {facade.anchors.length > 0 && (
+                            <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-100">
+                              <p className="text-[10px] uppercase font-black text-zinc-400 mb-2 tracking-widest">Legenda Ancoraggi {facade.name}</p>
+                              <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                                {facade.anchors.map((anchor, index) => (
+                                  <div key={anchor.id} className="flex items-center gap-2 text-[9px]">
+                                    <span className="font-black text-emerald-600">{index + 1}.</span>
+                                    <span className="text-zinc-700 font-bold uppercase">{anchor.type}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                  </section>
 
-                  {/* Allegato A Section */}
-                  <section className="page-break-before">
-                    <div className="border-4 border-zinc-900 p-8 text-center mb-12">
-                      <h2 className="text-5xl font-black uppercase mb-4">Allegato A</h2>
-                      <p className="text-xl font-bold">SCHEMI DI MONTAGGIO E SPECIFICHE TECNICHE DI DETTAGLIO</p>
+                    <div className="absolute bottom-16 left-16 right-16 flex justify-between items-center text-[10px] text-zinc-400 font-bold uppercase border-t border-zinc-100 pt-4">
+                      <span>PiMUS - {data.site.address}</span>
+                      <span>Pagina 5</span>
                     </div>
-                    <div className="bg-zinc-50 border border-zinc-200 p-12 rounded-lg text-center">
-                      <Construction size={64} className="mx-auto text-zinc-300 mb-6" />
-                      <p className="text-zinc-600 max-w-lg mx-auto leading-relaxed">
-                        In questa sezione vengono richiamati gli schemi di montaggio specifici forniti dal fabbricante ({data.scaffolding.brand}). 
-                        Le procedure qui contenute integrano quanto descritto nella relazione tecnica e costituiscono parte integrante del presente Pi.M.U.S.
-                      </p>
-                      <div className="mt-12 grid grid-cols-2 gap-8 text-left">
-                        <div className="p-6 bg-white border border-zinc-100 rounded shadow-sm">
-                          <h4 className="font-bold text-sm mb-2 uppercase tracking-tight">Sequenza Operativa</h4>
-                          <p className="text-xs text-zinc-500">Dettaglio passo-passo del posizionamento elementi strutturali, correnti e diagonali.</p>
-                        </div>
-                        <div className="p-6 bg-white border border-zinc-100 rounded shadow-sm">
-                          <h4 className="font-bold text-sm mb-2 uppercase tracking-tight">Distanziamenti</h4>
-                          <p className="text-xs text-zinc-500">Quote di montaggio, interassi e tolleranze ammesse dal libretto ministeriale.</p>
-                        </div>
-                      </div>
-                    </div>
-                  </section>
+                  </div>
 
-                  {/* Footer */}
-                  <div className="mt-20 pt-8 border-t border-zinc-100 flex justify-between items-end">
-                    <div className="text-[10px] text-zinc-400">
-                      <p>Documento generato il {new Date(data.createdAt).toLocaleDateString()}</p>
-                      <p>ID Documento: {data.id}</p>
+                  {/* PAGE 6+: SAFETY PROCEDURES */}
+                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                    <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">4. Procedure Operative e Misure di Sicurezza</h2>
+                    <div className="prose prose-sm max-w-none text-zinc-700 leading-relaxed text-justify">
+                      {data.safetyProcedures ? (
+                        <div 
+                          className="safety-content"
+                          dangerouslySetInnerHTML={{ 
+                            __html: data.safetyProcedures
+                              .replace(/\n/g, '<br/>')
+                              .replace(/(\d+\.\s+[A-Z\s,]+)/g, '<strong>$1</strong>')
+                              .replace(/([A-Z\s]{10,})/g, (match) => {
+                                // Only bold if it's not already inside a strong tag and looks like a title
+                                return `<strong>${match}</strong>`;
+                              })
+                          }} 
+                        />
+                      ) : (
+                        <p className="italic text-zinc-400">Generazione procedure in corso...</p>
+                      )}
                     </div>
-                    <div className="flex gap-12">
-                      <div className="text-center">
-                        <div className="w-32 h-px bg-zinc-200 mb-2" />
-                        <p className="text-[9px] uppercase font-bold text-zinc-400">Firma del Preposto</p>
+
+                    <div className="absolute bottom-16 left-16 right-16 flex justify-between items-center text-[10px] text-zinc-400 font-bold uppercase border-t border-zinc-100 pt-4">
+                      <span>PiMUS - {data.site.address}</span>
+                      <span>Pagina 6</span>
+                    </div>
+                  </div>
+
+                  {/* FINAL PAGE: APPENDICE A (CHECKLIST) */}
+                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                    <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">Appendice A: Verifiche degli Elementi</h2>
+                    <div className="space-y-6">
+                      <p className="text-xs text-zinc-500 italic">Verifiche da effettuare prima del montaggio (Allegato XIX D.Lgs 81/08)</p>
+                      <table className="w-full border-collapse border border-zinc-200 text-[10px]">
+                        <thead>
+                          <tr className="bg-zinc-100">
+                            <th className="border border-zinc-200 p-2 text-left uppercase">Elemento</th>
+                            <th className="border border-zinc-200 p-2 text-left uppercase">Tipo di Verifica</th>
+                            <th className="border border-zinc-200 p-2 text-left uppercase">Esito</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            ['Generale', 'Controllo esistenza libretto ministeriale', 'OK'],
+                            ['Telaio', 'Controllo marchio e stato di conservazione', 'OK'],
+                            ['Correnti/Diagonali', 'Controllo linearità e attacchi', 'OK'],
+                            ['Impalcati', 'Controllo orizzontalità e dispositivi blocco', 'OK'],
+                            ['Basette', 'Controllo filettatura e stelo', 'OK'],
+                            ['Ancoraggi', 'Controllo efficienza e serraggio', 'OK'],
+                          ].map(([el, ver, es], i) => (
+                            <tr key={i}>
+                              <td className="border border-zinc-200 p-2 font-bold uppercase">{el}</td>
+                              <td className="border border-zinc-200 p-2">{ver}</td>
+                              <td className="border border-zinc-200 p-2 text-center font-black text-emerald-600">{es}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-12 pt-20">
+                      <div className="space-y-8">
+                        <div className="border-b border-zinc-300 pb-12">
+                          <p className="text-[10px] uppercase font-bold text-zinc-400 mb-1">Firma del Preposto</p>
+                        </div>
+                        <p className="text-[10px] font-bold uppercase">{data.scaffolding.preposto}</p>
                       </div>
-                      <div className="text-center">
-                        <div className="w-32 h-px bg-zinc-200 mb-2" />
-                        <p className="text-[9px] uppercase font-bold text-zinc-400">Timbro Impresa</p>
+                      <div className="space-y-8">
+                        <div className="border-b border-zinc-300 pb-12">
+                          <p className="text-[10px] uppercase font-bold text-zinc-400 mb-1">Firma Datore di Lavoro</p>
+                        </div>
+                        <p className="text-[10px] font-bold uppercase">{data.site.employer || data.company.name}</p>
                       </div>
+                    </div>
+
+                    <div className="absolute bottom-16 left-16 right-16 flex justify-between items-center text-[10px] text-zinc-400 font-bold uppercase border-t border-zinc-100 pt-4">
+                      <span>PiMUS - {data.site.address}</span>
+                      <span>Fine Relazione</span>
                     </div>
                   </div>
                 </div>

@@ -61,3 +61,23 @@ export const AnchorDiagram = () => (
     <text x="30" y="35" fontSize="6" fill="currentColor" className="font-mono">TUBE D.48</text>
   </svg>
 );
+
+export const EarthingDiagram = () => (
+  <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-zinc-900">
+    {/* Ground line */}
+    <line x1="10" y1="100" x2="110" y2="100" stroke="currentColor" strokeWidth="1" strokeDasharray="4 2" />
+    {/* Scaffolding pole */}
+    <rect x="30" y="20" width="8" height="80" fill="currentColor" opacity="0.4" />
+    {/* Earthing clamp */}
+    <rect x="26" y="60" width="16" height="10" rx="2" fill="currentColor" />
+    {/* Earthing wire */}
+    <path d="M42 65 Q70 65 70 100" stroke="#fbbf24" strokeWidth="3" strokeDasharray="4 2" />
+    {/* Grounding rod */}
+    <rect x="66" y="100" width="8" height="40" fill="#fbbf24" />
+    {/* Symbol */}
+    <line x1="60" y1="115" x2="80" y2="115" stroke="#fbbf24" strokeWidth="2" />
+    <line x1="64" y1="120" x2="76" y2="120" stroke="#fbbf24" strokeWidth="2" />
+    <line x1="68" y1="125" x2="72" y2="125" stroke="#fbbf24" strokeWidth="2" />
+    <text x="85" y="120" fontSize="8" fill="#fbbf24" className="font-black">PE</text>
+  </svg>
+);

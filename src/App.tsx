@@ -4,8 +4,6 @@
  */
 
 import React, { useState } from 'react';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import { 
   FileText, 
   Building2, 
@@ -67,7 +65,6 @@ const SidebarItem = ({
 export default function App() {
   const [activeStep, setActiveStep] = useState<'company' | 'site' | 'scaffolding' | 'facades' | 'preview'>('company');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [data, setData] = useState<PiMUSData>({
     id: Math.random().toString(36).substr(2, 9),
     createdAt: new Date().toISOString(),
@@ -220,53 +217,10 @@ export default function App() {
   };
 
   const handleDownloadPDF = async () => {
-    const element = document.getElementById('pimus-document');
-    if (!element) {
-      alert("Nessun documento da scaricare. Vai alla sezione Anteprima.");
-      return;
-    }
-
-    setIsDownloadingPdf(true);
-    try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pages = element.children;
-      
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i] as HTMLElement;
-        
-        // Ensure images are loaded
-        const images = page.getElementsByTagName('img');
-        await Promise.all(Array.from(images).map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = resolve; // Don't fail if one image fails
-          });
-        }));
-
-        const canvas = await html2canvas(page, {
-          scale: 2, // Higher scale for better quality
-          useCORS: true, // Allow cross-origin images
-          logging: false,
-          windowWidth: 1200 // Force desktop width for consistent rendering
-        });
-        
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const imgWidth = 210; // A4 width in mm
-        const pageHeight = 297; // A4 height in mm
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
-      }
-      
-      pdf.save(`PiMUS_${data.site.address || 'Progetto'}_${new Date().toISOString().split('T')[0]}.pdf`);
-    } catch (error) {
-      console.error("Error generating PDF:", error);
-      alert("Errore durante la generazione del PDF. Riprova.");
-    } finally {
-      setIsDownloadingPdf(false);
-    }
+    // html2canvas is incompatible with Tailwind v4's oklch colors.
+    // We must use the browser's native print functionality.
+    alert("Per salvare il documento come PDF:\n\n1. Nella finestra di stampa che si aprirà, seleziona come stampante 'Salva come PDF' o 'Microsoft Print to PDF'.\n2. Clicca su 'Salva' o 'Stampa'.\n\nAssicurati di abilitare la stampa della 'Grafica di background' nelle impostazioni aggiuntive per una resa ottimale.");
+    window.print();
   };
 
   const isStepComplete = (step: string) => {
@@ -336,11 +290,10 @@ export default function App() {
             </label>
             <button
               onClick={handleDownloadPDF}
-              disabled={isDownloadingPdf}
-              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-wait"
+              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium"
             >
-              {isDownloadingPdf ? <Loader2 className="animate-spin" size={18} /> : <FileDown size={18} />}
-              {isDownloadingPdf ? "Generazione PDF..." : "Scarica PDF Relazione"}
+              <FileDown size={18} />
+              Scarica PDF Relazione
             </button>
             <div className="h-px bg-zinc-100 my-4" />
             <SidebarItem 
@@ -984,15 +937,14 @@ export default function App() {
                   </div>
                   <button 
                     onClick={handleDownloadPDF}
-                    disabled={isDownloadingPdf}
-                    className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-wait"
+                    className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-all"
                   >
-                    {isDownloadingPdf ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
-                    {isDownloadingPdf ? "Generazione..." : "Scarica PDF"}
+                    <Download size={16} />
+                    Scarica PDF
                   </button>
                 </div>
 
-                <div id="pimus-document" className="bg-white shadow-2xl rounded-sm text-zinc-800 print:shadow-none print:p-0 font-sans">
+                <div id="pimus-document" className="bg-white rounded-sm text-zinc-800 print:p-0 font-sans" style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
                   {/* PAGE 1: COVER */}
                   <div className="p-16 min-h-[1122px] flex flex-col justify-between border-b border-zinc-100 relative">
                     <div className="flex justify-between items-start">
@@ -1119,7 +1071,7 @@ export default function App() {
                       <div className="grid grid-cols-2 gap-4">
                         {data.scaffolding.facades.map((f, i) => (
                           <div key={f.id} className="flex items-center gap-3">
-                            <span className="w-6 h-6 bg-white/20 rounded flex items-center justify-center text-xs font-black">{i + 1}</span>
+                            <span className="w-6 h-6 rounded flex items-center justify-center text-xs font-black" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>{i + 1}</span>
                             <span className="text-xs font-bold uppercase">{f.name}</span>
                           </div>
                         ))}
@@ -1241,7 +1193,7 @@ export default function App() {
                           </div>
                           
                           <div 
-                            className="bg-zinc-50 rounded-2xl border border-zinc-100 overflow-hidden relative shadow-inner"
+                            className="bg-zinc-50 rounded-2xl border border-zinc-100 overflow-hidden relative"
                             style={{ 
                               aspectRatio: facade.overlayConfig 
                                 ? `${facade.overlayConfig.stageWidth} / ${facade.overlayConfig.stageHeight}` 
@@ -1284,7 +1236,7 @@ export default function App() {
                                     <div className="w-full h-full relative overflow-hidden">
                                       {/* Shading Net Simulation */}
                                       {data.scaffolding.hasShadingNet && (
-                                        <div className="absolute inset-0 bg-zinc-900/30 z-0" />
+                                        <div className="absolute inset-0 z-0" style={{ backgroundColor: 'rgba(24, 24, 27, 0.3)' }} />
                                       )}
 
                                       {/* Detailed Scaffolding Structure */}
@@ -1328,8 +1280,8 @@ export default function App() {
                                                   />
                                                   {/* Toeboard (Fermapiede) */}
                                                   <div 
-                                                    className="absolute w-full bg-slate-500/60"
-                                                    style={{ height: '4px', top: `${y}%`, transform: 'translateY(-6px)' }}
+                                                    className="absolute w-full"
+                                                    style={{ backgroundColor: 'rgba(100, 116, 139, 0.6)', height: '4px', top: `${y}%`, transform: 'translateY(-6px)' }}
                                                   />
                                                 </>
                                               )}
@@ -1338,20 +1290,21 @@ export default function App() {
                                                 <>
                                                   {/* Guardrails (Parapetti) */}
                                                   <div 
-                                                    className="absolute w-full border-t border-red-500/60"
-                                                    style={{ top: `${y + rowHeightPercent * 0.4}%` }}
+                                                    className="absolute w-full border-t"
+                                                    style={{ borderColor: 'rgba(239, 68, 68, 0.6)', top: `${y + rowHeightPercent * 0.4}%` }}
                                                   />
                                                   <div 
-                                                    className="absolute w-full border-t border-red-500/60"
-                                                    style={{ top: `${y + rowHeightPercent * 0.7}%` }}
+                                                    className="absolute w-full border-t"
+                                                    style={{ borderColor: 'rgba(239, 68, 68, 0.6)', top: `${y + rowHeightPercent * 0.7}%` }}
                                                   />
 
                                                   {/* Diagonals */}
                                                   {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth))].map((_, c) => (
                                                     <div 
                                                       key={`diag-${r}-${c}`}
-                                                      className="absolute border-t border-red-500/20"
+                                                      className="absolute border-t"
                                                       style={{
+                                                        borderColor: 'rgba(239, 68, 68, 0.2)',
                                                         width: `${Math.sqrt(Math.pow(100 / Math.ceil(facade.width / data.scaffolding.moduleWidth), 2) + Math.pow(rowHeightPercent, 2))}%`,
                                                         left: `${c * (100 / Math.ceil(facade.width / data.scaffolding.moduleWidth))}%`,
                                                         top: `${y}%`,
@@ -1364,8 +1317,9 @@ export default function App() {
                                                   {/* Ladders (Scalette) - Blue */}
                                                   {r > 0 && (
                                                     <div 
-                                                      className="absolute border-l border-blue-500/40"
+                                                      className="absolute border-l"
                                                       style={{
+                                                        borderColor: 'rgba(59, 130, 246, 0.4)',
                                                         left: `${(r % 2 === 0 ? 20 : 70)}%`,
                                                         top: `${y}%`,
                                                         height: `${rowHeightPercent}%`,
@@ -1391,7 +1345,7 @@ export default function App() {
                                             }}
                                           >
                                             {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth) + 1)].map((_, i) => (
-                                              <div key={i} className="w-1 h-1 bg-amber-400 rounded-full shadow-[0_0_3px_#fbbf24] z-10" />
+                                              <div key={i} className="w-1 h-1 bg-amber-400 rounded-full z-10" style={{ boxShadow: '0 0 3px #fbbf24' }} />
                                             ))}
                                           </div>
                                         )}
@@ -1401,8 +1355,9 @@ export default function App() {
                                       {(facade.anchors || []).map((anchor, index) => (
                                         <div 
                                           key={anchor.id}
-                                          className="absolute w-4 h-4 bg-emerald-500 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-[7px] text-white font-black"
+                                          className="absolute w-4 h-4 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center text-[7px] text-white font-black"
                                           style={{
+                                            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
                                             left: `${(anchor.x / facade.overlayConfig!.width) * 100}%`,
                                             top: `${(anchor.y / facade.overlayConfig!.height) * 100}%`,
                                             transform: 'translate(-50%, -50%)'
@@ -1446,10 +1401,10 @@ export default function App() {
                   {/* PAGE 6+: SAFETY PROCEDURES */}
                   <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
                     <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">4. Procedure Operative e Misure di Sicurezza</h2>
-                    <div className="prose prose-sm max-w-none text-zinc-700 leading-relaxed text-justify">
+                    <div className="text-sm max-w-none text-zinc-700 leading-relaxed text-justify">
                       {data.safetyProcedures ? (
                         <div 
-                          className="safety-content"
+                          className="safety-content space-y-4"
                           dangerouslySetInnerHTML={{ 
                             __html: data.safetyProcedures
                               .replace(/\n/g, '<br/>')

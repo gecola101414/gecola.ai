@@ -4,6 +4,8 @@
  */
 
 import React, { useState } from 'react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { 
   FileText, 
   Building2, 
@@ -65,6 +67,7 @@ const SidebarItem = ({
 export default function App() {
   const [activeStep, setActiveStep] = useState<'company' | 'site' | 'scaffolding' | 'facades' | 'preview'>('company');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [data, setData] = useState<PiMUSData>({
     id: Math.random().toString(36).substr(2, 9),
     createdAt: new Date().toISOString(),
@@ -216,6 +219,56 @@ export default function App() {
     }
   };
 
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('pimus-document');
+    if (!element) {
+      alert("Nessun documento da scaricare. Vai alla sezione Anteprima.");
+      return;
+    }
+
+    setIsDownloadingPdf(true);
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pages = element.children;
+      
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i] as HTMLElement;
+        
+        // Ensure images are loaded
+        const images = page.getElementsByTagName('img');
+        await Promise.all(Array.from(images).map(img => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = resolve; // Don't fail if one image fails
+          });
+        }));
+
+        const canvas = await html2canvas(page, {
+          scale: 2, // Higher scale for better quality
+          useCORS: true, // Allow cross-origin images
+          logging: false,
+          windowWidth: 1200 // Force desktop width for consistent rendering
+        });
+        
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const imgWidth = 210; // A4 width in mm
+        const pageHeight = 297; // A4 height in mm
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+      }
+      
+      pdf.save(`PiMUS_${data.site.address || 'Progetto'}_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Errore durante la generazione del PDF. Riprova.");
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   const isStepComplete = (step: string) => {
     switch(step) {
       case 'company': return !!data.company.name && !!data.company.vat;
@@ -282,10 +335,12 @@ export default function App() {
               <input type="file" accept=".json" onChange={handleLoadProject} className="hidden" />
             </label>
             <button
-              onClick={() => window.print()}
-              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium"
+              onClick={handleDownloadPDF}
+              disabled={isDownloadingPdf}
+              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-wait"
             >
-              <FileDown size={18} /> Scarica PDF Relazione
+              {isDownloadingPdf ? <Loader2 className="animate-spin" size={18} /> : <FileDown size={18} />}
+              {isDownloadingPdf ? "Generazione PDF..." : "Scarica PDF Relazione"}
             </button>
             <div className="h-px bg-zinc-100 my-4" />
             <SidebarItem 
@@ -928,10 +983,12 @@ export default function App() {
                     <p className="text-zinc-500 text-sm">Controlla il PiMUS prima di scaricare il PDF.</p>
                   </div>
                   <button 
-                    onClick={() => window.print()}
-                    className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-all"
+                    onClick={handleDownloadPDF}
+                    disabled={isDownloadingPdf}
+                    className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-wait"
                   >
-                    <Download size={16} /> Scarica PDF
+                    {isDownloadingPdf ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+                    {isDownloadingPdf ? "Generazione..." : "Scarica PDF"}
                   </button>
                 </div>
 

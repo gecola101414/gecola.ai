@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import html2pdf from 'html2pdf.js';
 import { 
   FileText, 
   Building2, 
@@ -21,7 +22,8 @@ import {
   Upload,
   Save,
   FolderOpen,
-  FileDown
+  FileDown,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -65,6 +67,8 @@ const SidebarItem = ({
 export default function App() {
   const [activeStep, setActiveStep] = useState<'company' | 'site' | 'scaffolding' | 'facades' | 'preview'>('company');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [data, setData] = useState<PiMUSData>({
     id: Math.random().toString(36).substr(2, 9),
     createdAt: new Date().toISOString(),
@@ -97,6 +101,40 @@ export default function App() {
 
   const updateSite = (field: keyof SiteInfo, value: any) => {
     setData(prev => ({ ...prev, site: { ...prev.site, [field]: value } }));
+  };
+
+  const handleUpdatePlanMarkers = (markers: PlanMarker[]) => {
+    setData(prev => {
+      const currentFacades = prev.scaffolding.facades;
+      const newFacades = [...currentFacades];
+      
+      // Ensure each marker has a facadeId and the facade exists
+      const updatedMarkers = markers.map((marker, index) => {
+        let facadeId = marker.facadeId;
+        if (!facadeId || !newFacades.find(f => f.id === facadeId)) {
+          facadeId = Math.random().toString(36).substr(2, 9);
+          newFacades.push({
+            id: facadeId,
+            name: `Facciata ${marker.label || index + 1}`,
+            width: 0,
+            height: 0,
+            anchors: [],
+            erasedPaths: []
+          });
+        }
+        return { ...marker, facadeId };
+      });
+
+      // Remove facades that no longer have a corresponding marker
+      const markerFacadeIds = updatedMarkers.map(m => m.facadeId);
+      const filteredFacades = newFacades.filter(f => markerFacadeIds.includes(f.id));
+
+      return {
+        ...prev,
+        site: { ...prev.site, planMarkers: updatedMarkers },
+        scaffolding: { ...prev.scaffolding, facades: filteredFacades }
+      };
+    });
   };
 
   const handleSaveProject = () => {
@@ -216,11 +254,115 @@ export default function App() {
     }
   };
 
-  const handleDownloadPDF = async () => {
-    // html2canvas is incompatible with Tailwind v4's oklch colors.
-    // We must use the browser's native print functionality.
-    alert("Per salvare il documento come PDF:\n\n1. Nella finestra di stampa che si aprirà, seleziona come stampante 'Salva come PDF' o 'Microsoft Print to PDF'.\n2. Clicca su 'Salva' o 'Stampa'.\n\nAssicurati di abilitare la stampa della 'Grafica di background' nelle impostazioni aggiuntive per una resa ottimale.");
-    window.print();
+  const handleDownloadPDF = () => {
+    const element = document.getElementById('pimus-document');
+    if (!element) {
+      alert("Documento non trovato");
+      return;
+    }
+
+    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("ATTENZIONE: Il browser ha bloccato l'apertura del documento. Per scaricare il PDF, consenti i popup per questo sito (clicca sull'icona in alto a destra nella barra degli indirizzi) e riprova.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>PiMUS_${data.site.address || 'Progetto'}</title>
+          ${styles}
+          <style>
+            @media print {
+              @page { 
+                margin: 15mm; 
+                size: A4 portrait; 
+              }
+              body { 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+                margin: 0; 
+                background: white; 
+                padding-bottom: 15mm !important; /* Spazio per il piè di pagina */
+              }
+              #pimus-document { 
+                box-shadow: none !important; 
+                width: 100% !important; 
+                max-width: 100% !important;
+                margin: 0 !important; 
+                padding: 0 !important;
+              }
+              
+              /* Rimuove altezze fisse e padding che causano pagine bianche */
+              .min-h-\\[1123px\\] { min-height: auto !important; height: auto !important; }
+              .p-16 { padding: 0 !important; }
+              
+              /* Nasconde i piè di pagina hardcoded dell'anteprima */
+              .absolute.bottom-16 { display: none !important; }
+              
+              /* Previene il taglio a metà di immagini, tabelle e blocchi */
+              .page-break-before { page-break-before: always !important; }
+              h1, h2, h3, h4, h5, h6 { page-break-after: avoid !important; break-after: avoid !important; }
+              img, svg, canvas, .avoid-break, .bg-zinc-50, .border, table, tr, td, th, .facade-container { 
+                page-break-inside: avoid !important; 
+                break-inside: avoid !important; 
+              }
+              p, li, .safety-content p { 
+                orphans: 4; 
+                widows: 4; 
+                page-break-inside: auto !important;
+                break-inside: auto !important;
+              }
+              
+              /* Piè di pagina fisso su ogni pagina stampata */
+              .print-footer {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 10mm;
+                font-size: 8pt;
+                color: #666;
+                border-top: 1px solid #ccc;
+                padding-top: 2mm;
+                display: flex !important;
+                justify-content: space-between;
+                background: white;
+                z-index: 1000;
+                font-family: 'Inter', sans-serif;
+                text-transform: uppercase;
+                font-weight: bold;
+              }
+            }
+            @media screen {
+              .print-footer { display: none !important; }
+            }
+          </style>
+        </head>
+        <body>
+          ${element.outerHTML}
+          <div class="print-footer">
+            <span>Pi.M.U.S. - Cantiere: ${data.site.address || 'Non specificato'}</span>
+            <span>Committente: ${data.site.client || 'Non specificato'}</span>
+            <span>Data: ${new Date().toLocaleDateString('it-IT')}</span>
+          </div>
+          <script>
+            window.onload = () => {
+              setTimeout(() => {
+                window.print();
+              }, 800);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const isStepComplete = (step: string) => {
@@ -290,10 +432,11 @@ export default function App() {
             </label>
             <button
               onClick={handleDownloadPDF}
-              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium"
+              disabled={isDownloadingPdf}
+              className="w-full flex items-center gap-3 px-4 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-wait"
             >
-              <FileDown size={18} />
-              Scarica PDF Relazione
+              {isDownloadingPdf ? <Loader2 className="animate-spin" size={18} /> : <FileDown size={18} />}
+              {isDownloadingPdf ? "Generazione PDF..." : "Scarica PDF Relazione"}
             </button>
             <div className="h-px bg-zinc-100 my-4" />
             <SidebarItem 
@@ -385,8 +528,8 @@ export default function App() {
                 <div className="pt-8 border-t border-zinc-100">
                   <div className="flex justify-between items-center mb-4">
                     <div>
-                      <h3 className="text-lg font-bold tracking-tight">Squadra di Lavoro</h3>
-                      <p className="text-zinc-500 text-xs">Elenca i lavoratori addetti al montaggio e smontaggio.</p>
+                      <h3 className="text-lg font-bold tracking-tight">Squadra di Lavoro e Preposto</h3>
+                      <p className="text-zinc-500 text-xs">Indica il preposto e i lavoratori addetti al montaggio/smontaggio.</p>
                     </div>
                     <button 
                       onClick={() => setData(prev => ({ ...prev, team: [...prev.team, ''] }))}
@@ -396,6 +539,21 @@ export default function App() {
                       AGGIUNGI ADDETTO
                     </button>
                   </div>
+                  
+                  <div className="mb-6">
+                    <label className="block text-xs font-bold text-zinc-900 mb-2 uppercase tracking-wider">Preposto al Montaggio</label>
+                    <input 
+                      type="text" 
+                      value={data.scaffolding.preposto || ''}
+                      onChange={(e) => setData(prev => ({ 
+                        ...prev, 
+                        scaffolding: { ...prev.scaffolding, preposto: e.target.value } 
+                      }))}
+                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-zinc-900 outline-none"
+                      placeholder="Nome e Cognome del Preposto"
+                    />
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     {data.team.map((member, idx) => (
                       <div key={idx} className="flex gap-2">
@@ -460,7 +618,7 @@ export default function App() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Preposto al Montaggio</label>
+                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Redattore del PiMUS</label>
                     <input 
                       type="text" 
                       value={data.site.manager}
@@ -553,7 +711,7 @@ export default function App() {
                                 image={data.site.sitePlan}
                                 markers={data.site.planMarkers || []}
                                 facades={data.scaffolding.facades}
-                                onUpdateMarkers={(markers) => updateSite('planMarkers', markers)}
+                                onUpdateMarkers={handleUpdatePlanMarkers}
                               />
                             </div>
                           )}
@@ -622,16 +780,6 @@ export default function App() {
                       value={data.scaffolding.maxHeight}
                       onChange={(e) => updateScaffolding('maxHeight', parseFloat(e.target.value))}
                       className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">Preposto al Montaggio</label>
-                    <input 
-                      type="text" 
-                      value={data.scaffolding.preposto}
-                      onChange={(e) => updateScaffolding('preposto', e.target.value)}
-                      className="w-full bg-white border border-zinc-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
-                      placeholder="Nome del preposto (D.Lgs 81/08)"
                     />
                   </div>
                   <div className="space-y-2">
@@ -940,13 +1088,13 @@ export default function App() {
                     className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-all"
                   >
                     <Download size={16} />
-                    Scarica PDF
+                    Stampa / Salva PDF
                   </button>
                 </div>
 
-                <div id="pimus-document" className="bg-white rounded-sm text-zinc-800 print:p-0 font-sans" style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+                <div id="pimus-document" className="bg-white rounded-sm text-zinc-800 print:p-0 font-sans mx-auto" style={{ width: '794px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
                   {/* PAGE 1: COVER */}
-                  <div className="p-16 min-h-[1122px] flex flex-col justify-between border-b border-zinc-100 relative">
+                  <div className="p-16 min-h-[1123px] flex flex-col justify-between border-b border-zinc-100 relative">
                     <div className="flex justify-between items-start">
                       <div className="space-y-1">
                         <p className="text-lg font-black tracking-tighter">{data.company.name || "NOME IMPRESA"}</p>
@@ -992,7 +1140,7 @@ export default function App() {
                   </div>
 
                   {/* PAGE 2: INDICE */}
-                  <div className="p-16 min-h-[1122px] space-y-12 page-break-before relative">
+                  <div className="p-16 min-h-[1123px] space-y-12 page-break-before relative">
                     <h2 className="text-3xl font-black uppercase border-b-4 border-zinc-900 pb-4 mb-12">Sommario / Indice</h2>
                     <div className="space-y-6">
                       {[
@@ -1018,7 +1166,7 @@ export default function App() {
                   </div>
 
                   {/* PAGE 3: PIANTA DI CANTIERE */}
-                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                  <div className="p-16 min-h-[1123px] space-y-8 page-break-before relative">
                     <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">3. Pianta di Cantiere e Inquadramento Facciate</h2>
                     <p className="text-sm text-zinc-600 leading-relaxed mb-8">
                       La presente sezione illustra l'inquadramento planimetrico dell'area di cantiere con l'indicazione numerica delle facciate oggetto di intervento e trattate nel dettaglio nell'Allegato A.
@@ -1039,15 +1187,18 @@ export default function App() {
                                 transform: `translate(-50%, -50%) rotate(${marker.rotation}deg)`,
                               }}
                             >
-                              <div className="relative">
-                                <div className="w-10 h-1 bg-zinc-900" />
+                              <div className="relative" style={{ width: '50px', height: '24px' }}>
+                                <svg width="50" height="24" viewBox="0 0 50 24" className="absolute top-0 left-0">
+                                  <line x1="0" y1="12" x2="40" y2="12" stroke="#18181b" strokeWidth="4" />
+                                  <polygon points="40,4 50,12 40,20" fill="#18181b" />
+                                </svg>
                                 <div 
-                                  className="absolute right-0 top-1/2 -translate-y-1/2 border-y-[6px] border-y-transparent border-l-[10px] border-l-zinc-900" 
-                                  style={{ transform: 'translateX(100%)' }}
-                                />
-                                <div 
-                                  className="absolute -left-4 -top-4 w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center text-[10px] text-white font-black"
-                                  style={{ transform: `rotate(${-marker.rotation}deg)` }}
+                                  className="absolute w-6 h-6 bg-zinc-900 rounded-full flex items-center justify-center text-[10px] text-white font-black"
+                                  style={{ 
+                                    left: '-12px', 
+                                    top: '0',
+                                    transform: `rotate(${-marker.rotation}deg)` 
+                                  }}
                                 >
                                   {marker.label}
                                 </div>
@@ -1085,7 +1236,7 @@ export default function App() {
                   </div>
 
                   {/* PAGE 4: ADMINISTRATIVE */}
-                  <div className="p-16 min-h-[1122px] space-y-12 page-break-before relative">
+                  <div className="p-16 min-h-[1123px] space-y-12 page-break-before relative">
                     <section>
                       <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">1. Identificazione dei Soggetti</h2>
                       <div className="grid grid-cols-1 gap-8">
@@ -1180,7 +1331,7 @@ export default function App() {
                   </div>
 
                   {/* PAGE 5: ALLEGATO A (SCHEMI TECNICI) */}
-                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                  <div className="p-16 min-h-[1123px] space-y-8 page-break-before relative">
                     <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-4 text-center">ALLEGATO A: Libretto Tecnico e Schemi di Montaggio</h2>
                     <p className="text-xs text-zinc-500 text-center italic mb-8">Rappresentazione grafica in scala del ponteggio e posizionamento ancoraggi</p>
                     
@@ -1200,7 +1351,7 @@ export default function App() {
                                 : '16/9' 
                             }}
                           >
-                            {facade.photo ? (
+                            {facade.photo && facade.overlayConfig ? (
                               <>
                                 <img src={facade.photo} className="w-full h-full object-contain" />
                                 {facade.erasedPaths?.map((path, i) => (
@@ -1220,158 +1371,138 @@ export default function App() {
                                     />
                                   </svg>
                                 ))}
-                                {facade.overlayConfig && (
-                                  <div 
-                                    style={{
-                                      position: 'absolute',
-                                      left: `${(facade.overlayConfig.x / facade.overlayConfig.stageWidth) * 100}%`,
-                                      top: `${(facade.overlayConfig.y / facade.overlayConfig.stageHeight) * 100}%`,
-                                      width: `${(facade.overlayConfig.width / facade.overlayConfig.stageWidth) * 100}%`,
-                                      height: `${(facade.overlayConfig.height / facade.overlayConfig.stageHeight) * 100}%`,
-                                      border: '1.5px solid #ef4444',
-                                      backgroundColor: `rgba(239, 68, 68, ${facade.overlayConfig.opacity * 0.1})`,
-                                      opacity: facade.overlayConfig.opacity,
-                                    }}
+                                <div 
+                                  style={{
+                                    position: 'absolute',
+                                    left: `${(facade.overlayConfig.x / facade.overlayConfig.stageWidth) * 100}%`,
+                                    top: `${(facade.overlayConfig.y / facade.overlayConfig.stageHeight) * 100}%`,
+                                    width: `${(facade.overlayConfig.width / facade.overlayConfig.stageWidth) * 100}%`,
+                                    height: `${(facade.overlayConfig.height / facade.overlayConfig.stageHeight) * 100}%`,
+                                  }}
+                                >
+                                  {/* Shading Net Simulation */}
+                                  {data.scaffolding.hasShadingNet && (
+                                    <div className="absolute inset-0 z-0" style={{ backgroundColor: 'rgba(24, 24, 27, 0.3)' }} />
+                                  )}
+
+                                  {/* SVG Scaffolding Structure (Vector for PDF) */}
+                                  <svg 
+                                    className="absolute inset-0 w-full h-full overflow-visible"
+                                    viewBox={`0 0 ${facade.overlayConfig.width} ${facade.overlayConfig.height}`}
+                                    preserveAspectRatio="none"
                                   >
-                                    <div className="w-full h-full relative overflow-hidden">
-                                      {/* Shading Net Simulation */}
-                                      {data.scaffolding.hasShadingNet && (
-                                        <div className="absolute inset-0 z-0" style={{ backgroundColor: 'rgba(24, 24, 27, 0.3)' }} />
-                                      )}
+                                    {/* Dimensions */}
+                                    <g stroke="#000" strokeWidth="1.5">
+                                      {/* Width Dimension (Top) */}
+                                      <line x1="0" y1="-30" x2={facade.overlayConfig.width} y2="-30" />
+                                      <line x1="0" y1="-30" x2="8" y2="-34" />
+                                      <line x1="0" y1="-30" x2="8" y2="-26" />
+                                      <line x1={facade.overlayConfig.width} y1="-30" x2={facade.overlayConfig.width - 8} y2="-34" />
+                                      <line x1={facade.overlayConfig.width} y1="-30" x2={facade.overlayConfig.width - 8} y2="-26" />
+                                      <line x1="0" y1="-35" x2="0" y2="-25" />
+                                      <line x1={facade.overlayConfig.width} y1="-35" x2={facade.overlayConfig.width} y2="-25" />
+                                      <text x={facade.overlayConfig.width / 2} y="-35" textAnchor="middle" fontSize="14" fontWeight="bold" fill="#000" stroke="none">{facade.width.toFixed(2)}m</text>
 
-                                      {/* Detailed Scaffolding Structure */}
-                                      <div className="w-full h-full relative">
-                                        {/* Vertical Frames (Montanti) */}
-                                        {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth) + 1)].map((_, c) => (
-                                          <div 
-                                            key={`v-frame-${c}`}
-                                            className="absolute h-full bg-red-500"
-                                            style={{
-                                              width: '1.5px',
-                                              left: `${c * (100 / Math.ceil(facade.width / data.scaffolding.moduleWidth))}%`,
-                                              transform: 'translateX(-50%)'
-                                            }}
-                                          >
-                                            {/* Base Plate */}
-                                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-0.5 bg-red-500" />
-                                          </div>
-                                        ))}
+                                      {/* Height Dimension (Left) */}
+                                      <line x1="-30" y1="0" x2="-30" y2={facade.overlayConfig.height} />
+                                      <line x1="-30" y1="0" x2="-34" y2="8" />
+                                      <line x1="-30" y1="0" x2="-26" y2="8" />
+                                      <line x1="-30" y1={facade.overlayConfig.height} x2="-34" y2={facade.overlayConfig.height - 8} />
+                                      <line x1="-30" y1={facade.overlayConfig.height} x2="-26" y2={facade.overlayConfig.height - 8} />
+                                      <line x1="-35" y1="0" x2="-25" y2="0" />
+                                      <line x1="-35" y1={facade.overlayConfig.height} x2="-25" y2={facade.overlayConfig.height} />
+                                      <text x="-35" y={facade.overlayConfig.height / 2} textAnchor="middle" fontSize="14" fontWeight="bold" fill="#000" stroke="none" transform={`rotate(-90, -35, ${facade.overlayConfig.height / 2})`}>{facade.height.toFixed(2)}m</text>
+                                    </g>
 
-                                        {/* Horizontal Ledgers, Platforms, Toeboards, Guardrails */}
-                                        {[...Array(Math.ceil(facade.height / data.scaffolding.moduleHeight) + 1)].map((_, r) => {
-                                          const numRows = Math.ceil(facade.height / data.scaffolding.moduleHeight);
-                                          const rowHeightPercent = 100 / numRows;
-                                          const y = r * rowHeightPercent;
-                                          
-                                          return (
-                                            <React.Fragment key={`row-${r}`}>
-                                              {/* Ledger (Corrente) */}
-                                              <div 
-                                                className="absolute w-full bg-red-500"
-                                                style={{ height: '1px', top: `${y}%` }}
-                                              />
-                                              
-                                              {r > 0 && (
-                                                <>
-                                                  {/* Platform (Impalcato) */}
-                                                  <div 
-                                                    className="absolute w-full bg-slate-400"
-                                                    style={{ height: '2px', top: `${y}%`, transform: 'translateY(-2px)' }}
-                                                  />
-                                                  {/* Toeboard (Fermapiede) */}
-                                                  <div 
-                                                    className="absolute w-full"
-                                                    style={{ backgroundColor: 'rgba(100, 116, 139, 0.6)', height: '4px', top: `${y}%`, transform: 'translateY(-6px)' }}
-                                                  />
-                                                </>
-                                              )}
+                                    {/* Scaffolding Grid */}
+                                    {(() => {
+                                      const numCols = Math.ceil(facade.width / data.scaffolding.moduleWidth);
+                                      const numRows = Math.ceil(facade.height / data.scaffolding.moduleHeight);
+                                      const colWidth = facade.overlayConfig.width / numCols;
+                                      const rowHeight = facade.overlayConfig.height / numRows;
+                                      const elements = [];
 
-                                              {r < numRows && (
-                                                <>
-                                                  {/* Guardrails (Parapetti) */}
-                                                  <div 
-                                                    className="absolute w-full border-t"
-                                                    style={{ borderColor: 'rgba(239, 68, 68, 0.6)', top: `${y + rowHeightPercent * 0.4}%` }}
-                                                  />
-                                                  <div 
-                                                    className="absolute w-full border-t"
-                                                    style={{ borderColor: 'rgba(239, 68, 68, 0.6)', top: `${y + rowHeightPercent * 0.7}%` }}
-                                                  />
+                                      // Vertical Frames & Base Plates
+                                      for (let c = 0; c <= numCols; c++) {
+                                        const x = c * colWidth;
+                                        // Vertical Frame
+                                        elements.push(<line key={`v-${c}`} x1={x} y1="0" x2={x} y2={facade.overlayConfig.height} stroke="#ef4444" strokeWidth="2" />);
+                                        // Base Plate (Piedino)
+                                        elements.push(<rect key={`bp-${c}`} x={x - 6} y={facade.overlayConfig.height - 2} width="12" height="4" fill="#ef4444" />);
+                                      }
 
-                                                  {/* Diagonals */}
-                                                  {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth))].map((_, c) => (
-                                                    <div 
-                                                      key={`diag-${r}-${c}`}
-                                                      className="absolute border-t"
-                                                      style={{
-                                                        borderColor: 'rgba(239, 68, 68, 0.2)',
-                                                        width: `${Math.sqrt(Math.pow(100 / Math.ceil(facade.width / data.scaffolding.moduleWidth), 2) + Math.pow(rowHeightPercent, 2))}%`,
-                                                        left: `${c * (100 / Math.ceil(facade.width / data.scaffolding.moduleWidth))}%`,
-                                                        top: `${y}%`,
-                                                        transform: `rotate(${Math.atan(rowHeightPercent / (100 / Math.ceil(facade.width / data.scaffolding.moduleWidth))) * (180 / Math.PI)}deg)`,
-                                                        transformOrigin: '0 0'
-                                                      }}
-                                                    />
-                                                  ))}
+                                      // Horizontal Elements
+                                      for (let r = 0; r <= numRows; r++) {
+                                        const y = r * rowHeight;
+                                        
+                                        // Ledger (Corrente)
+                                        elements.push(<line key={`h-${r}`} x1="0" y1={y} x2={facade.overlayConfig.width} y2={y} stroke="#ef4444" strokeWidth="2" />);
 
-                                                  {/* Ladders (Scalette) - Blue */}
-                                                  {r > 0 && (
-                                                    <div 
-                                                      className="absolute border-l"
-                                                      style={{
-                                                        borderColor: 'rgba(59, 130, 246, 0.4)',
-                                                        left: `${(r % 2 === 0 ? 20 : 70)}%`,
-                                                        top: `${y}%`,
-                                                        height: `${rowHeightPercent}%`,
-                                                        width: '8%',
-                                                        transform: 'skewX(-15deg)',
-                                                        borderTop: '1px solid rgba(59, 130, 246, 0.4)'
-                                                      }}
-                                                    />
-                                                  )}
-                                                </>
-                                              )}
-                                            </React.Fragment>
+                                        if (r > 0 && r < numRows) {
+                                          // Platform (Impalcato)
+                                          elements.push(<rect key={`p-${r}`} x="0" y={y - 4} width={facade.overlayConfig.width} height="4" fill="#94a3b8" />);
+                                          // Toeboard (Fermapiede)
+                                          elements.push(<rect key={`t-${r}`} x="0" y={y - 12} width={facade.overlayConfig.width} height="8" fill="rgba(100, 116, 139, 0.8)" />);
+                                        }
+
+                                        if (r < numRows) {
+                                          // Guardrails (Parapetti)
+                                          elements.push(<line key={`g1-${r}`} x1="0" y1={y + rowHeight * 0.4} x2={facade.overlayConfig.width} y2={y + rowHeight * 0.4} stroke="rgba(239, 68, 68, 0.8)" strokeWidth="1" />);
+                                          elements.push(<line key={`g2-${r}`} x1="0" y1={y + rowHeight * 0.7} x2={facade.overlayConfig.width} y2={y + rowHeight * 0.7} stroke="rgba(239, 68, 68, 0.8)" strokeWidth="1" />);
+
+                                          // Diagonals & Ladders
+                                          for (let c = 0; c < numCols; c++) {
+                                            const x = c * colWidth;
+                                            // Diagonal
+                                            elements.push(<line key={`d-${r}-${c}`} x1={x} y1={y} x2={x + colWidth} y2={y + rowHeight} stroke="rgba(239, 68, 68, 0.4)" strokeWidth="1" />);
+                                            
+                                            // Ladder (every other column, alternating)
+                                            if (r > 0 && c === (r % 2 === 0 ? 1 : numCols > 2 ? 2 : 0)) {
+                                              elements.push(
+                                                <g key={`l-${r}-${c}`}>
+                                                  <line x1={x + colWidth * 0.2} y1={y} x2={x + colWidth * 0.4} y2={y + rowHeight} stroke="rgba(59, 130, 246, 0.6)" strokeWidth="2" />
+                                                  <line x1={x + colWidth * 0.4} y1={y} x2={x + colWidth * 0.6} y2={y + rowHeight} stroke="rgba(59, 130, 246, 0.6)" strokeWidth="2" />
+                                                </g>
+                                              );
+                                            }
+                                          }
+                                        }
+                                      }
+
+                                      // Night Lights (at the first toeboard level)
+                                      if (data.scaffolding.hasNightLights) {
+                                        const firstLevelY = (numRows - 1) * rowHeight;
+                                        [0, numCols].forEach(c => {
+                                          const x = c * colWidth;
+                                          elements.push(
+                                            <circle key={`nl-${c}`} cx={x} cy={firstLevelY - 12} r="4" fill="#fbbf24" stroke="#d97706" strokeWidth="1" />
                                           );
-                                        })}
+                                        });
+                                      }
 
-                                        {/* Night Lights */}
-                                        {data.scaffolding.hasNightLights && (
-                                          <div 
-                                            className="absolute w-full flex justify-around px-[5%]"
-                                            style={{
-                                              top: `${100 / Math.ceil(facade.height / data.scaffolding.moduleHeight)}%`,
-                                              transform: 'translateY(-4px)'
-                                            }}
-                                          >
-                                            {[...Array(Math.ceil(facade.width / data.scaffolding.moduleWidth) + 1)].map((_, i) => (
-                                              <div key={i} className="w-1 h-1 bg-amber-400 rounded-full z-10" style={{ boxShadow: '0 0 3px #fbbf24' }} />
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
+                                      return elements;
+                                    })()}
+                                  </svg>
 
-                                      {/* Anchors (GREEN) */}
-                                      {(facade.anchors || []).map((anchor, index) => (
-                                        <div 
-                                          key={anchor.id}
-                                          className="absolute w-4 h-4 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center text-[7px] text-white font-black"
-                                          style={{
-                                            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-                                            left: `${(anchor.x / facade.overlayConfig!.width) * 100}%`,
-                                            top: `${(anchor.y / facade.overlayConfig!.height) * 100}%`,
-                                            transform: 'translate(-50%, -50%)'
-                                          }}
-                                        >
-                                          {index + 1}
-                                        </div>
-                                      ))}
+                                  {/* Anchors (GREEN) */}
+                                  {(facade.anchors || []).map((anchor, index) => (
+                                    <div 
+                                      key={anchor.id}
+                                      className="absolute w-5 h-5 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-black z-10"
+                                      style={{
+                                        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.1)',
+                                        left: `${(anchor.x / facade.overlayConfig!.width) * 100}%`,
+                                        top: `${(anchor.y / facade.overlayConfig!.height) * 100}%`,
+                                        transform: 'translate(-50%, -50%)'
+                                      }}
+                                    >
+                                      {index + 1}
                                     </div>
-                                  </div>
-                                )}
+                                  ))}
+                                </div>
                               </>
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center text-zinc-300">Nessuno schema</div>
+                              <div className="w-full h-full flex items-center justify-center text-zinc-300 min-h-[400px]">Nessuno schema</div>
                             )}
                           </div>
                           
@@ -1399,21 +1530,13 @@ export default function App() {
                   </div>
 
                   {/* PAGE 6+: SAFETY PROCEDURES */}
-                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                  <div className="p-16 min-h-[1123px] space-y-8 page-break-before relative">
                     <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">4. Procedure Operative e Misure di Sicurezza</h2>
-                    <div className="text-sm max-w-none text-zinc-700 leading-relaxed text-justify">
+                    <div className="max-w-none text-zinc-900 leading-relaxed text-justify">
                       {data.safetyProcedures ? (
                         <div 
-                          className="safety-content space-y-4"
-                          dangerouslySetInnerHTML={{ 
-                            __html: data.safetyProcedures
-                              .replace(/\n/g, '<br/>')
-                              .replace(/(\d+\.\s+[A-Z\s,]+)/g, '<strong>$1</strong>')
-                              .replace(/([A-Z\s]{10,})/g, (match) => {
-                                // Only bold if it's not already inside a strong tag and looks like a title
-                                return `<strong>${match}</strong>`;
-                              })
-                          }} 
+                          className="safety-content"
+                          dangerouslySetInnerHTML={{ __html: data.safetyProcedures }} 
                         />
                       ) : (
                         <p className="italic text-zinc-400">Generazione procedure in corso...</p>
@@ -1427,7 +1550,7 @@ export default function App() {
                   </div>
 
                   {/* FINAL PAGE: APPENDICE A (CHECKLIST) */}
-                  <div className="p-16 min-h-[1122px] space-y-8 page-break-before relative">
+                  <div className="p-16 min-h-[1123px] space-y-8 page-break-before relative">
                     <h2 className="text-xl font-black uppercase border-b-2 border-zinc-900 pb-2 mb-8">Appendice A: Verifiche degli Elementi</h2>
                     <div className="space-y-6">
                       <p className="text-xs text-zinc-500 italic">Verifiche da effettuare prima del montaggio (Allegato XIX D.Lgs 81/08)</p>
@@ -1463,7 +1586,7 @@ export default function App() {
                         <div className="border-b border-zinc-300 pb-12">
                           <p className="text-[10px] uppercase font-bold text-zinc-400 mb-1">Firma del Preposto</p>
                         </div>
-                        <p className="text-[10px] font-bold uppercase">{data.scaffolding.preposto}</p>
+                        <p className="text-[10px] font-bold uppercase">{data.scaffolding.preposto || "NON SPECIFICATO"}</p>
                       </div>
                       <div className="space-y-8">
                         <div className="border-b border-zinc-300 pb-12">
@@ -1485,15 +1608,17 @@ export default function App() {
         </div>
       </main>
 
-      {/* Global CSS for printing */}
+      {/* Global CSS for printing and PDF generation */}
       <style dangerouslySetInnerHTML={{ __html: `
+        .page-break-before { page-break-before: always; }
         @media print {
           aside { display: none !important; }
           main { padding: 0 !important; overflow: visible !important; background: white !important; }
           .max-w-4xl { max-width: none !important; }
-          #pimus-document { box-shadow: none !important; border: none !important; padding: 0 !important; }
-          .page-break-before { page-break-before: always; }
+          #pimus-document { box-shadow: none !important; border: none !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; }
           button { display: none !important; }
+          body { background: white !important; }
+          #root > div { height: auto !important; overflow: visible !important; }
         }
       `}} />
     </div>

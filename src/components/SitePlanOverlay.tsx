@@ -49,7 +49,7 @@ export const SitePlanOverlay: React.FC<SitePlanOverlayProps> = ({
       x: dimensions.width / 2,
       y: dimensions.height / 2,
       rotation: 0,
-      facadeId: facades[0]?.id || '',
+      facadeId: '', // Will be assigned by App.tsx
       label: (markers.length + 1).toString(),
     };
     onUpdateMarkers([...markers, newMarker]);
@@ -111,26 +111,9 @@ export const SitePlanOverlay: React.FC<SitePlanOverlayProps> = ({
         </div>
         {selectedId && (
           <div className="flex items-center gap-4 bg-zinc-100 px-4 py-2 rounded-lg">
-            <select
-              className="bg-transparent text-sm font-bold outline-none"
-              value={markers.find((m) => m.id === selectedId)?.facadeId}
-              onChange={(e) => {
-                const newMarkers = markers.map((m) => {
-                  if (m.id === selectedId) {
-                    return { ...m, facadeId: e.target.value };
-                  }
-                  return m;
-                });
-                onUpdateMarkers(newMarkers);
-              }}
-            >
-              <option value="">Seleziona Facciata</option>
-              {facades.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
+            <span className="text-sm font-bold text-zinc-700">
+              Facciata {markers.find((m) => m.id === selectedId)?.label}
+            </span>
             <button
               onClick={() => handleRemoveMarker(selectedId)}
               className="text-red-500 hover:text-red-700 transition-colors"

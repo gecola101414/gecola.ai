@@ -21,6 +21,7 @@ interface ScaffoldingOverlayProps {
   onUpdateErasedPaths?: (paths: ErasedPath[]) => void;
   onUpdateShadingNet?: (hasNet: boolean) => void;
   initialConfig?: { x: number; y: number; width: number; height: number; opacity: number; stageWidth: number; stageHeight: number };
+  readOnly?: boolean;
 }
 
 export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
@@ -37,7 +38,8 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
   onUpdateAnchors,
   onUpdateErasedPaths,
   onUpdateShadingNet,
-  initialConfig
+  initialConfig,
+  readOnly = false
 }) => {
   const [img] = useImage(imageSrc);
   const stageRef = useRef<any>(null);
@@ -256,7 +258,7 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
       );
 
       // Platforms (Impalcato) - Gray
-      if (r > 0 && r <= numRows) {
+      if (r > 0 && r < numRows) {
         elements.push(
           <Rect
             key={`plat-${r}`}
@@ -378,13 +380,13 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
       }
 
       // Night Lights (Luci Notturne) - Now at the FIRST level (bottom)
-      if (hasNightLights && r === numRows) {
-        for (let c = 0; c <= numCols; c++) {
+      if (hasNightLights && r === numRows - 1) {
+        [0, numCols].forEach(c => {
           elements.push(
             <Circle
               key={`light-${c}`}
               x={c * colWidth}
-              y={0}
+              y={y - 12} // Height of the first toeboard
               radius={4}
               fill="#fbbf24"
               shadowBlur={10}
@@ -392,9 +394,64 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
               opacity={0.8}
             />
           );
-        }
+        });
       }
     }
+
+    // Dimension Lines (Quote)
+    const DIM_COLOR = "#000000";
+    const DIM_OFFSET = 30; // Distance from scaffolding
+
+    // Width Dimension (Top)
+    elements.push(
+      <Group key="dim-width" x={0} y={-DIM_OFFSET}>
+        <Line points={[0, 0, config.width, 0]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        {/* Arrows */}
+        <Line points={[0, 0, 8, -4]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[0, 0, 8, 4]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[config.width, 0, config.width - 8, -4]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[config.width, 0, config.width - 8, 4]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        {/* Tick marks */}
+        <Line points={[0, -5, 0, 5]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[config.width, -5, config.width, 5]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        {/* Text */}
+        <Text
+          x={config.width / 2 - 20}
+          y={-15}
+          text={`${facadeWidth.toFixed(2)}m`}
+          fontSize={14}
+          fontStyle="bold"
+          fill={DIM_COLOR}
+          align="center"
+        />
+      </Group>
+    );
+
+    // Height Dimension (Left)
+    elements.push(
+      <Group key="dim-height" x={-DIM_OFFSET} y={0}>
+        <Line points={[0, 0, 0, config.height]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        {/* Arrows */}
+        <Line points={[0, 0, -4, 8]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[0, 0, 4, 8]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[0, config.height, -4, config.height - 8]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[0, config.height, 4, config.height - 8]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        {/* Tick marks */}
+        <Line points={[-5, 0, 5, 0]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        <Line points={[-5, config.height, 5, config.height]} stroke={DIM_COLOR} strokeWidth={1.5} />
+        {/* Text */}
+        <Text
+          x={-45}
+          y={config.height / 2 - 10}
+          text={`${facadeHeight.toFixed(2)}m`}
+          fontSize={14}
+          fontStyle="bold"
+          fill={DIM_COLOR}
+          align="center"
+          rotation={-90}
+        />
+      </Group>
+    );
 
     return elements;
   };
@@ -443,89 +500,93 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
   };
 
   return (
-    <div className="space-y-4 w-full">
-      <div className="bg-zinc-900 p-3 rounded-t-xl flex justify-between items-center border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-[10px] text-zinc-400 uppercase font-black tracking-widest">Sovrapposizione Tecnica in Scala (ROSSO)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setIsLocked(!isLocked)}
-            className={cn(
-              "flex items-center gap-2 text-[10px] px-3 py-1.5 rounded border transition-all uppercase font-bold",
-              isLocked 
-                ? "bg-amber-500/20 text-amber-500 border-amber-500/50" 
-                : "bg-white/10 text-white border-white/10 hover:bg-white/20"
-            )}
-            title={isLocked ? "Sblocca per spostare il ponteggio" : "Blocca posizione ponteggio"}
-          >
-            {isLocked ? <Lock size={12} /> : <Unlock size={12} />}
-            {isLocked ? "Ponteggio Bloccato" : "Ponteggio Libero"}
-          </button>
-          <button 
-            onClick={() => setIsAnchorsLocked(!isAnchorsLocked)}
-            className={cn(
-              "flex items-center gap-2 text-[10px] px-3 py-1.5 rounded border transition-all uppercase font-bold",
-              isAnchorsLocked 
-                ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" 
-                : "bg-white/10 text-white border-white/10 hover:bg-white/20"
-            )}
-            title={isAnchorsLocked ? "Sblocca per spostare gli ancoraggi" : "Blocca posizione ancoraggi"}
-          >
-            {isAnchorsLocked ? <Lock size={12} /> : <Unlock size={12} />}
-            {isAnchorsLocked ? "Ancoraggi Bloccati" : "Ancoraggi Liberi"}
-          </button>
-          <button 
-            onClick={resetScaffolding}
-            className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded border border-white/10 transition-colors uppercase font-bold flex items-center gap-2"
-          >
-            <RotateCcw size={12} />
-            Ripristina
-          </button>
-        </div>
-      </div>
-      
-      <div className="border border-zinc-200 rounded-b-xl overflow-hidden bg-zinc-100 shadow-2xl relative">
-        {/* Tool Sidebar */}
-        <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
-          <button 
-            onClick={() => setTool('move')}
-            className={cn(
-              "p-3 rounded-xl shadow-lg transition-all border",
-              tool === 'move' ? "bg-zinc-900 text-white border-zinc-900" : "bg-white text-zinc-400 border-zinc-200 hover:bg-zinc-50"
-            )}
-            title="Sposta Ponteggio"
-          >
-            <Move size={20} />
-          </button>
-          <button 
-            onClick={() => setTool('eraser')}
-            className={cn(
-              "p-3 rounded-xl shadow-lg transition-all border",
-              tool === 'eraser' ? "bg-red-600 text-white border-red-600" : "bg-white text-zinc-400 border-zinc-200 hover:bg-zinc-50"
-            )}
-            title="Gomma (Cancella parti della foto)"
-          >
-            <Eraser size={20} />
-          </button>
-          {tool === 'eraser' && localErasedPaths.length > 0 && (
+    <div className={cn("w-full", !readOnly && "space-y-4")}>
+      {!readOnly && (
+        <div className="bg-zinc-900 p-3 rounded-t-xl flex justify-between items-center border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[10px] text-zinc-400 uppercase font-black tracking-widest">Sovrapposizione Tecnica in Scala (ROSSO)</span>
+          </div>
+          <div className="flex items-center gap-2">
             <button 
-              onClick={clearEraser}
-              className="p-3 rounded-xl shadow-lg bg-white text-red-500 border border-zinc-200 hover:bg-red-50"
-              title="Ripristina Foto"
+              onClick={() => setIsLocked(!isLocked)}
+              className={cn(
+                "flex items-center gap-2 text-[10px] px-3 py-1.5 rounded border transition-all uppercase font-bold",
+                isLocked 
+                  ? "bg-amber-500/20 text-amber-500 border-amber-500/50" 
+                  : "bg-white/10 text-white border-white/10 hover:bg-white/20"
+              )}
+              title={isLocked ? "Sblocca per spostare il ponteggio" : "Blocca posizione ponteggio"}
             >
-              <RotateCcw size={20} />
+              {isLocked ? <Lock size={12} /> : <Unlock size={12} />}
+              {isLocked ? "Ponteggio Bloccato" : "Ponteggio Libero"}
             </button>
-          )}
+            <button 
+              onClick={() => setIsAnchorsLocked(!isAnchorsLocked)}
+              className={cn(
+                "flex items-center gap-2 text-[10px] px-3 py-1.5 rounded border transition-all uppercase font-bold",
+                isAnchorsLocked 
+                  ? "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" 
+                  : "bg-white/10 text-white border-white/10 hover:bg-white/20"
+              )}
+              title={isAnchorsLocked ? "Sblocca per spostare gli ancoraggi" : "Blocca posizione ancoraggi"}
+            >
+              {isAnchorsLocked ? <Lock size={12} /> : <Unlock size={12} />}
+              {isAnchorsLocked ? "Ancoraggi Bloccati" : "Ancoraggi Liberi"}
+            </button>
+            <button 
+              onClick={resetScaffolding}
+              className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded border border-white/10 transition-colors uppercase font-bold flex items-center gap-2"
+            >
+              <RotateCcw size={12} />
+              Ripristina
+            </button>
+          </div>
         </div>
+      )}
+      
+      <div className={cn("border border-zinc-200 overflow-hidden relative", readOnly ? "bg-white rounded-xl" : "bg-zinc-100 shadow-2xl rounded-b-xl")}>
+        {/* Tool Sidebar */}
+        {!readOnly && (
+          <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
+            <button 
+              onClick={() => setTool('move')}
+              className={cn(
+                "p-3 rounded-xl shadow-lg transition-all border",
+                tool === 'move' ? "bg-zinc-900 text-white border-zinc-900" : "bg-white text-zinc-400 border-zinc-200 hover:bg-zinc-50"
+              )}
+              title="Sposta Ponteggio"
+            >
+              <Move size={20} />
+            </button>
+            <button 
+              onClick={() => setTool('eraser')}
+              className={cn(
+                "p-3 rounded-xl shadow-lg transition-all border",
+                tool === 'eraser' ? "bg-red-600 text-white border-red-600" : "bg-white text-zinc-400 border-zinc-200 hover:bg-zinc-50"
+              )}
+              title="Gomma (Cancella parti della foto)"
+            >
+              <Eraser size={20} />
+            </button>
+            {tool === 'eraser' && localErasedPaths.length > 0 && (
+              <button 
+                onClick={clearEraser}
+                className="p-3 rounded-xl shadow-lg bg-white text-red-500 border border-zinc-200 hover:bg-red-50"
+                title="Ripristina Foto"
+              >
+                <RotateCcw size={20} />
+              </button>
+            )}
+          </div>
+        )}
 
         <div 
-          className="overflow-auto max-h-[700px] flex justify-center bg-zinc-200/50"
-          style={{ cursor: tool === 'eraser' ? 'crosshair' : (zoom > 1 ? 'grab' : 'default') }}
+          className={cn("flex justify-center", readOnly ? "overflow-hidden" : "overflow-auto max-h-[700px] bg-zinc-200/50")}
+          style={{ cursor: readOnly ? 'default' : (tool === 'eraser' ? 'crosshair' : (zoom > 1 ? 'grab' : 'default')) }}
         >
           <div style={{ 
-            transform: `scale(${zoom})`, 
+            transform: `scale(${readOnly ? 1 : zoom})`, 
             transformOrigin: 'top center',
             transition: 'transform 0.2s ease-out',
             width: stageDimensions.width,
@@ -535,12 +596,12 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
               width={stageDimensions.width} 
               height={stageDimensions.height} 
               ref={stageRef}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onTouchStart={handleMouseDown}
-              onTouchMove={handleMouseMove}
-              onTouchEnd={handleMouseUp}
+              onMouseDown={readOnly ? undefined : handleMouseDown}
+              onMouseMove={readOnly ? undefined : handleMouseMove}
+              onMouseUp={readOnly ? undefined : handleMouseUp}
+              onTouchStart={readOnly ? undefined : handleMouseDown}
+              onTouchMove={readOnly ? undefined : handleMouseMove}
+              onTouchEnd={readOnly ? undefined : handleMouseUp}
             >
               <Layer>
                 {img && (
@@ -569,20 +630,22 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
                 <Group
                   x={config.x}
                   y={config.y}
-                  draggable={!isLocked && tool === 'move'}
+                  draggable={!readOnly && !isLocked && tool === 'move'}
                   onDragMove={handleDragMove}
                   onDragEnd={handleDragEnd}
                 >
-                  <Rect
-                    width={config.width}
-                    height={config.height}
-                    fill="rgba(239, 68, 68, 0.05)"
-                    stroke="#ef4444"
-                    strokeWidth={1}
-                    dash={[5, 5]}
-                  />
+                  {!readOnly && (
+                    <Rect
+                      width={config.width}
+                      height={config.height}
+                      fill="rgba(239, 68, 68, 0.05)"
+                      stroke="#ef4444"
+                      strokeWidth={1}
+                      dash={[5, 5]}
+                    />
+                  )}
                   
-                  <Group opacity={config.opacity}>
+                  <Group opacity={readOnly ? 1 : config.opacity}>
                     {renderScaffoldingStructure()}
                   </Group>
 
@@ -592,7 +655,7 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
                       key={anchor.id}
                       x={anchor.x}
                       y={anchor.y}
-                      draggable={!isAnchorsLocked && tool === 'move'}
+                      draggable={!readOnly && !isAnchorsLocked && tool === 'move'}
                       onDragStart={(e) => {
                         e.cancelBubble = true;
                       }}
@@ -609,15 +672,15 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
                         e.cancelBubble = true;
                         updateAnchorPosition(anchor.id, e.target.x(), e.target.y());
                       }}
-                      onDblClick={() => !isAnchorsLocked && removeAnchor(anchor.id)}
-                      onDblTap={() => !isAnchorsLocked && removeAnchor(anchor.id)}
+                      onDblClick={() => !readOnly && !isAnchorsLocked && removeAnchor(anchor.id)}
+                      onDblTap={() => !readOnly && !isAnchorsLocked && removeAnchor(anchor.id)}
                     >
                       <Circle
                         radius={12}
                         fill="#10b981"
                         stroke="white"
                         strokeWidth={2}
-                        shadowBlur={5}
+                        shadowBlur={readOnly ? 0 : 5}
                       />
                       <Text
                         text={(index + 1).toString()}
@@ -631,7 +694,7 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
                   ))}
                   
                   {/* Scale Handle */}
-                  {!isLocked && tool === 'move' && (
+                  {!readOnly && !isLocked && tool === 'move' && (
                     <Group
                       x={config.width}
                       y={config.height}
@@ -676,113 +739,115 @@ export const ScaffoldingOverlay: React.FC<ScaffoldingOverlayProps> = ({
           </div>
         </div>
         
-        <div className="p-5 bg-white border-t border-zinc-200 flex flex-col gap-4">
-          <div className="flex justify-between items-center">
-            <div className="space-y-1">
-              <p className="text-[10px] text-zinc-400 uppercase font-bold">Strumenti di Precisione</p>
-              <p className="text-xs text-zinc-600 font-medium">Usa lo zoom per dettagli. Trascina il ponteggio rosso per allinearlo.</p>
-            </div>
-            <div className="flex items-center gap-8">
-              <div className="flex items-center gap-3 bg-zinc-50 p-2 px-4 rounded-xl border border-zinc-100">
-                <label className="text-[10px] text-zinc-400 font-bold uppercase">Zoom Foto</label>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="2.5" 
-                  step="0.1" 
-                  value={zoom} 
-                  onChange={(e) => setZoom(parseFloat(e.target.value))}
-                  className="w-24 h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-zinc-900"
-                />
-                <span className="text-[10px] font-mono font-bold text-zinc-500 w-8">{Math.round(zoom * 100)}%</span>
+        {!readOnly && (
+          <div className="p-5 bg-white border-t border-zinc-200 flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <div className="space-y-1">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold">Strumenti di Precisione</p>
+                <p className="text-xs text-zinc-600 font-medium">Usa lo zoom per dettagli. Trascina il ponteggio rosso per allinearlo.</p>
               </div>
-              
-              <div className="flex items-center gap-3 bg-zinc-50 p-2 px-4 rounded-xl border border-zinc-100">
-                <label className="text-[10px] text-zinc-400 font-bold uppercase">Opacità</label>
-                <input 
-                  type="range" 
-                  min="0.1" 
-                  max="1" 
-                  step="0.1" 
-                  value={config.opacity} 
-                  onChange={(e) => {
-                    const newOpacity = parseFloat(e.target.value);
-                    setConfig({ ...config, opacity: newOpacity });
-                    onUpdate({ ...config, opacity: newOpacity });
-                  }}
-                  className="w-24 h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-red-500"
-                />
+              <div className="flex items-center gap-8">
+                <div className="flex items-center gap-3 bg-zinc-50 p-2 px-4 rounded-xl border border-zinc-100">
+                  <label className="text-[10px] text-zinc-400 font-bold uppercase">Zoom Foto</label>
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="2.5" 
+                    step="0.1" 
+                    value={zoom} 
+                    onChange={(e) => setZoom(parseFloat(e.target.value))}
+                    className="w-24 h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-zinc-900"
+                  />
+                  <span className="text-[10px] font-mono font-bold text-zinc-500 w-8">{Math.round(zoom * 100)}%</span>
+                </div>
+                
+                <div className="flex items-center gap-3 bg-zinc-50 p-2 px-4 rounded-xl border border-zinc-100">
+                  <label className="text-[10px] text-zinc-400 font-bold uppercase">Opacità</label>
+                  <input 
+                    type="range" 
+                    min="0.1" 
+                    max="1" 
+                    step="0.1" 
+                    value={config.opacity} 
+                    onChange={(e) => {
+                      const newOpacity = parseFloat(e.target.value);
+                      setConfig({ ...config, opacity: newOpacity });
+                      onUpdate({ ...config, opacity: newOpacity });
+                    }}
+                    className="w-24 h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-red-500"
+                  />
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex justify-between items-center pt-4 border-t border-zinc-100">
-            <div className="space-y-1">
-              <p className="text-[10px] text-zinc-400 uppercase font-bold">Gestione Ancoraggi (D.Lgs 81/08)</p>
-              <p className="text-xs text-zinc-600 font-medium">
-                Consigliati: <span className="font-bold text-zinc-900">{recommendedAnchors}</span> | 
-                Posizionati: <span className="font-bold text-emerald-600">{anchors.length}</span>
-              </p>
-              <p className="text-[9px] text-zinc-400 italic">Doppio click sull'ancoraggio per rimuoverlo.</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <select 
-                value={selectedAnchorType}
-                onChange={(e) => setSelectedAnchorType(e.target.value)}
-                className="text-xs bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-zinc-900"
-              >
-                {ANCHOR_TYPES.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-              <button 
-                onClick={addAnchor}
-                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition-all"
-              >
-                <Plus size={14} />
-                AGGIUNGI ANCORAGGIO
-              </button>
-              <button 
-                onClick={() => onUpdateShadingNet && onUpdateShadingNet(!hasShadingNet)}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all border-2",
-                  hasShadingNet 
-                    ? "bg-zinc-900 text-white border-zinc-900" 
-                    : "bg-white text-zinc-400 border-zinc-100 hover:border-zinc-200"
-                )}
-              >
-                <Eraser size={14} className={hasShadingNet ? "text-white" : "text-zinc-400"} />
-                RETE PROTEZIONE
-              </button>
-            </div>
-          </div>
-          
-          {anchors.length > 0 && (
-            <div className="bg-zinc-50 rounded-xl p-4 border border-zinc-100">
-              <p className="text-[10px] text-zinc-400 uppercase font-black mb-3 tracking-widest">Legenda Ancoraggi Posizionati</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {anchors.map((anchor, index) => (
-                  <div key={anchor.id} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-zinc-200 shadow-sm">
-                    <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center text-[10px] font-black text-white shadow-sm">
-                      {index + 1}
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[9px] font-black text-zinc-900 leading-tight">{anchor.type}</span>
-                      <span className="text-[8px] text-zinc-400 font-mono">ID: {anchor.id.slice(0, 4)}</span>
-                    </div>
-                    <button 
-                      onClick={() => removeAnchor(anchor.id)} 
-                      className="ml-auto p-1 text-zinc-300 hover:text-red-500 transition-colors"
-                      title="Rimuovi"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
+            <div className="flex justify-between items-center pt-4 border-t border-zinc-100">
+              <div className="space-y-1">
+                <p className="text-[10px] text-zinc-400 uppercase font-bold">Gestione Ancoraggi (D.Lgs 81/08)</p>
+                <p className="text-xs text-zinc-600 font-medium">
+                  Consigliati: <span className="font-bold text-zinc-900">{recommendedAnchors}</span> | 
+                  Posizionati: <span className="font-bold text-emerald-600">{anchors.length}</span>
+                </p>
+                <p className="text-[9px] text-zinc-400 italic">Doppio click sull'ancoraggio per rimuoverlo.</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <select 
+                  value={selectedAnchorType}
+                  onChange={(e) => setSelectedAnchorType(e.target.value)}
+                  className="text-xs bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-zinc-900"
+                >
+                  {ANCHOR_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+                <button 
+                  onClick={addAnchor}
+                  className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition-all"
+                >
+                  <Plus size={14} />
+                  AGGIUNGI ANCORAGGIO
+                </button>
+                <button 
+                  onClick={() => onUpdateShadingNet && onUpdateShadingNet(!hasShadingNet)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all border-2",
+                    hasShadingNet 
+                      ? "bg-zinc-900 text-white border-zinc-900" 
+                      : "bg-white text-zinc-400 border-zinc-100 hover:border-zinc-200"
+                  )}
+                >
+                  <Eraser size={14} className={hasShadingNet ? "text-white" : "text-zinc-400"} />
+                  RETE PROTEZIONE
+                </button>
               </div>
             </div>
-          )}
-        </div>
+            
+            {anchors.length > 0 && (
+              <div className="bg-zinc-50 rounded-xl p-4 border border-zinc-100">
+                <p className="text-[10px] text-zinc-400 uppercase font-black mb-3 tracking-widest">Legenda Ancoraggi Posizionati</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {anchors.map((anchor, index) => (
+                    <div key={anchor.id} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-zinc-200 shadow-sm">
+                      <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center text-[10px] font-black text-white shadow-sm">
+                        {index + 1}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-zinc-900 leading-tight">{anchor.type}</span>
+                        <span className="text-[8px] text-zinc-400 font-mono">ID: {anchor.id.slice(0, 4)}</span>
+                      </div>
+                      <button 
+                        onClick={() => removeAnchor(anchor.id)} 
+                        className="ml-auto p-1 text-zinc-300 hover:text-red-500 transition-colors"
+                        title="Rimuovi"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

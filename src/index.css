@@ -271,3 +271,14 @@ html, body {
   margin-bottom: 0.5rem;
   line-height: 1.6;
 }
+
+@media print {
+  body { background: white; }
+  #root > div { height: auto !important; overflow: visible !important; }
+  .print\:hidden { display: none !important; }
+  .print\:p-0 { padding: 0 !important; }
+  #pimus-document { box-shadow: none !important; border: none !important; padding: 0 !important; }
+  button { display: none !important; }
+  aside { display: none !important; }
+  .page-break-before { page-break-before: always; }
+}

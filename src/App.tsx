@@ -2029,7 +2029,14 @@ const App: React.FC = () => {
                ) : (<div className="p-20 text-center text-gray-400 uppercase font-black opacity-20 text-3xl">Seleziona una sezione</div>)}
             </div>
           </div>
-          <ProjectAnalystModal isOpen={isAnalystModalOpen} onClose={() => setIsAnalystModalOpen(false)} articles={articles} />
+          <ProjectAnalystModal 
+            isOpen={isAnalystModalOpen} 
+            onClose={() => setIsAnalystModalOpen(false)} 
+            articles={articles} 
+            categories={categories}
+            analyses={analyses}
+            projectInfo={projectInfo}
+          />
           <ProjectSettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} info={projectInfo} onSave={(newInfo) => setProjectInfo(newInfo)} />
           {editingArticle && <ArticleEditModal isOpen={isEditArticleModalOpen} onClose={() => { setIsEditArticleModalOpen(false); setEditingArticle(null); }} article={editingArticle} onSave={handleArticleEditSave} onConvertToAnalysis={handleConvertArticleToAnalysis} />}
           {linkTarget && <LinkArticleModal isOpen={isLinkModalOpen} onClose={() => { setIsLinkModalOpen(false); setLinkTarget(null); }} articles={articles} currentArticleId={linkTarget.articleId} onLink={handleLinkMeasurement} />}

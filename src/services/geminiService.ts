@@ -3,7 +3,7 @@ import { Article, Measurement, Category } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Gemini on the frontend as required by the platform
-const getAi = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY || "" });
+const getAi = () => new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
 
 const cleanAndParseJson = (text: string) => {
   try {

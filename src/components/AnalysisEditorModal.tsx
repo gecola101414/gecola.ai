@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, Save, Plus, Trash2, Calculator, Coins, Hammer, Truck, Package, Scale, Maximize2, Minimize2, Lock } from 'lucide-react';
 import { PriceAnalysis, AnalysisComponent } from '../types';
 import { COMMON_UNITS, LABOR_CATALOG, EQUIPMENT_CATALOG, MATERIAL_CATALOG } from '../constants';
+import { parseNumber } from '../utils';
 import { cleanDescription } from '../services/geminiService';
 
 interface AnalysisEditorModalProps {
@@ -34,6 +35,7 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
   });
 
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const isLocked = formData.isLocked || false;
   
   // Datalist IDs
   const sharedDatalistId = "analysis-units-datalist";
@@ -90,9 +92,52 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
     return { mat, lab, eq, costoTecnico, spese, utile, totalBatch, unitPrice };
   }, [formData.components, formData.generalExpensesRate, formData.profitRate, formData.analysisQuantity]);
 
-  if (!isOpen) return null;
+  const handleSave = useCallback(() => {
+     if (isLocked) return;
+     const finalAnalysis: PriceAnalysis = {
+         ...formData,
+         description: cleanDescription(formData.description),
+         code: cleanDescription(formData.code),
+         unit: cleanDescription(formData.unit),
+         components: formData.components.map(c => ({
+            ...c,
+            description: cleanDescription(c.description),
+            unit: cleanDescription(c.unit)
+         })),
+         totalMaterials: calculatedTotals.mat,
+         totalLabor: calculatedTotals.lab,
+         totalEquipment: calculatedTotals.eq,
+         costoTecnico: calculatedTotals.costoTecnico,
+         valoreSpese: calculatedTotals.spese,
+         valoreUtile: calculatedTotals.utile,
+         totalBatchValue: calculatedTotals.totalBatch,
+         totalUnitPrice: calculatedTotals.unitPrice
+     };
+     onSave(finalAnalysis);
+     onClose();
+  }, [formData, isLocked, calculatedTotals, onSave, onClose]);
 
-  const isLocked = formData.isLocked || false;
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        handleSave();
+        return;
+    }
+
+    if (['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) {
+      e.preventDefault();
+      const inputs = Array.from(document.querySelectorAll('.modal-content input, .modal-content select, .modal-content textarea'));
+      const index = inputs.indexOf(e.target as HTMLElement);
+      
+      if (e.key === 'Enter' || e.key === 'ArrowDown') {
+        if (index < inputs.length - 1) (inputs[index + 1] as HTMLElement).focus();
+      } else if (e.key === 'ArrowUp') {
+        if (index > 0) (inputs[index - 1] as HTMLElement).focus();
+      }
+    }
+  }, [handleSave]);
+
+  if (!isOpen) return null;
 
   const handleAddComponent = (type: 'material' | 'labor' | 'equipment') => {
     if (isLocked) return;
@@ -142,22 +187,6 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
     });
   };
 
-  const handleSave = () => {
-     if (isLocked) return;
-     const finalAnalysis: PriceAnalysis = {
-         ...formData,
-         totalMaterials: calculatedTotals.mat,
-         totalLabor: calculatedTotals.lab,
-         totalEquipment: calculatedTotals.eq,
-         costoTecnico: calculatedTotals.costoTecnico,
-         valoreSpese: calculatedTotals.spese,
-         valoreUtile: calculatedTotals.utile,
-         totalBatchValue: calculatedTotals.totalBatch,
-         totalUnitPrice: calculatedTotals.unitPrice
-     };
-     onSave(finalAnalysis);
-     onClose();
-  };
 
   const formatEuro = (n: number) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: true }).format(n);
   const formatNum = (n: number) => n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true });
@@ -178,7 +207,7 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
           {MATERIAL_CATALOG.map((item, i) => (<option key={i} value={item.description}>{formatEuro(item.price)}/{item.unit}</option>))}
       </datalist>
 
-      <div className={`bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden border border-gray-300 relative ${isLocked ? 'opacity-95' : ''}`}>
+      <div className={`modal-content bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden border border-gray-300 relative ${isLocked ? 'opacity-95' : ''}`} onKeyDown={handleKeyDown}>
         
         {isDescriptionExpanded && (
             <div className="absolute inset-0 z-50 bg-white flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
@@ -194,7 +223,7 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
                 <div className="flex-1 flex flex-col">
                     <textarea
                         value={formData.description}
-                        onChange={e => !isLocked && setFormData({...formData, description: cleanDescription(e.target.value)})}
+                        onChange={e => !isLocked && setFormData({...formData, description: e.target.value})}
                         readOnly={isLocked}
                         className={`flex-1 w-full border border-gray-300 rounded-lg p-6 text-lg font-serif text-gray-800 shadow-inner resize-none focus:ring-2 focus:ring-purple-500 outline-none leading-relaxed text-justify ${isLocked ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                         autoFocus
@@ -234,11 +263,11 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
                                 <Maximize2 className="w-3 h-3" /> Espandi
                             </button>
                         </div>
-                        <textarea readOnly={isLocked} value={formData.description} onChange={e => setFormData({...formData, description: cleanDescription(e.target.value)})} className={`w-full border border-gray-300 rounded p-2 text-sm resize-none h-[52px] leading-tight focus:ring-1 focus:ring-purple-500 outline-none text-justify ${isLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`} placeholder="Es. Posa in opera di..." />
+                        <textarea readOnly={isLocked} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className={`w-full border border-gray-300 rounded p-2 text-sm resize-none h-[52px] leading-tight focus:ring-1 focus:ring-purple-500 outline-none text-justify ${isLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`} placeholder="Es. Posa in opera di..." />
                     </div>
                     <div className={`col-span-3 p-2 rounded border h-[76px] flex flex-col justify-center ${isLocked ? 'bg-gray-100 border-gray-300' : 'bg-purple-100 border-purple-200'}`}>
                         <label className="block text-[10px] font-bold uppercase text-purple-700 mb-1 flex items-center gap-1"><Scale className="w-3 h-3" /> Quantità Analizzata</label>
-                        <input readOnly={isLocked} type="number" value={formData.analysisQuantity || ''} onChange={e => setFormData({...formData, analysisQuantity: parseFloat(e.target.value) || 0})} className={`w-full border border-purple-300 rounded p-1 text-sm text-center font-bold text-purple-900 focus:ring-1 focus:ring-purple-500 ${isLocked ? 'bg-white cursor-not-allowed' : ''}`} placeholder="0" />
+                        <input readOnly={isLocked} type="text" inputMode="decimal" value={formData.analysisQuantity || ''} onChange={e => setFormData({...formData, analysisQuantity: parseNumber(e.target.value) || 0})} className={`w-full border border-purple-300 rounded p-1 text-sm text-center font-bold text-purple-900 focus:ring-1 focus:ring-purple-500 ${isLocked ? 'bg-white cursor-not-allowed' : ''}`} placeholder="0" />
                     </div>
                     <div className="col-span-2">
                         <label className="block text-xs font-bold uppercase text-gray-500 mb-1">U.M. Finale</label>
@@ -246,17 +275,17 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 bg-white relative">
-                    <table className="w-full text-left text-sm border-collapse">
-                        <thead className="bg-gray-100 text-gray-600 font-bold text-[10px] uppercase sticky top-0 z-10 shadow-sm">
+                <div className="flex-1 overflow-y-auto px-4 pb-4 bg-white relative">
+                    <table className="w-full text-left text-sm border-separate border-spacing-0">
+                        <thead className="text-gray-600 font-bold text-[10px] uppercase shadow-sm">
                             <tr>
-                                <th className="p-2 w-8 border-b border-gray-200"></th>
-                                <th className="p-2 border-b border-gray-200">Descrizione Elemento (Catalogo)</th>
-                                <th className="p-2 w-16 text-center border-b border-gray-200">U.M.</th>
-                                <th className="p-2 w-24 text-center border-b border-gray-200 bg-blue-50 text-blue-700 font-black">Quantità</th>
-                                <th className="p-2 w-28 text-right border-b border-gray-200">Prezzo Unit.</th>
-                                <th className="p-2 w-28 text-right border-b border-gray-200">Importo</th>
-                                <th className="p-2 w-10 border-b border-gray-200"></th>
+                                <th className="p-2 w-8 border-b border-gray-200 bg-gray-100 sticky top-0 z-10"></th>
+                                <th className="p-2 border-b border-gray-200 bg-gray-100 sticky top-0 z-10">Descrizione Elemento (Catalogo)</th>
+                                <th className="p-2 w-16 text-center border-b border-gray-200 bg-gray-100 sticky top-0 z-10">U.M.</th>
+                                <th className="p-2 w-24 text-center border-b border-gray-200 bg-blue-50 text-blue-700 font-black sticky top-0 z-10">Quantità</th>
+                                <th className="p-2 w-28 text-right border-b border-gray-200 bg-gray-100 sticky top-0 z-10">Prezzo Unit.</th>
+                                <th className="p-2 w-28 text-right border-b border-gray-200 bg-gray-100 sticky top-0 z-10">Importo</th>
+                                <th className="p-2 w-10 border-b border-gray-200 bg-gray-100 sticky top-0 z-10"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -284,10 +313,10 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
                                         <input readOnly={isLocked} type="text" list={sharedDatalistId} value={comp.unit} onChange={e => handleUpdateComponent(comp.id, 'unit', e.target.value)} className={`w-full bg-transparent border-none focus:ring-0 p-0 text-sm text-center text-gray-500 ${isLocked ? 'cursor-not-allowed' : ''}`} autoComplete="off" />
                                     </td>
                                     <td className="p-2 bg-blue-50/30">
-                                        <input readOnly={isLocked} type="number" step="any" value={comp.quantity} onChange={e => handleUpdateComponent(comp.id, 'quantity', parseFloat(e.target.value))} className={`w-full bg-transparent border-none focus:ring-1 focus:ring-blue-200 p-0 text-sm text-center font-black text-blue-900 ${isLocked ? 'cursor-not-allowed' : ''}`} />
+                                        <input readOnly={isLocked} type="text" inputMode="decimal" value={comp.quantity} onChange={e => handleUpdateComponent(comp.id, 'quantity', parseNumber(e.target.value))} className={`w-full bg-transparent border-none focus:ring-1 focus:ring-blue-200 p-0 text-sm text-center font-black text-blue-900 ${isLocked ? 'cursor-not-allowed' : ''}`} />
                                     </td>
                                     <td className="p-2">
-                                        <input readOnly={isLocked} type="number" step="0.01" value={comp.unitPrice} onChange={e => handleUpdateComponent(comp.id, 'unitPrice', parseFloat(e.target.value))} className={`w-full bg-transparent border-none focus:ring-0 p-0 text-sm text-right font-mono ${isLocked ? 'cursor-not-allowed' : ''}`} />
+                                        <input readOnly={isLocked} type="text" inputMode="decimal" value={comp.unitPrice} onChange={e => handleUpdateComponent(comp.id, 'unitPrice', parseNumber(e.target.value))} className={`w-full bg-transparent border-none focus:ring-0 p-0 text-sm text-right font-mono ${isLocked ? 'cursor-not-allowed' : ''}`} />
                                     </td>
                                     <td className="p-2 text-right font-mono font-bold text-gray-800">
                                         {formatEuro((comp.quantity || 0) * (comp.unitPrice || 0))}
@@ -332,7 +361,7 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
                         <label className="flex justify-between text-[9px] font-black uppercase text-gray-400 mb-0.5 tracking-widest">
                             <span>Spese Generali</span>
                             <div className="flex items-center">
-                                <input readOnly={isLocked} type="number" value={formData.generalExpensesRate} onChange={e => setFormData({...formData, generalExpensesRate: parseFloat(e.target.value)})} className={`w-7 text-right border-b border-gray-200 focus:outline-none text-purple-600 font-bold text-xs ${isLocked ? 'cursor-not-allowed' : ''}`} />
+                                <input readOnly={isLocked} type="text" inputMode="decimal" value={formData.generalExpensesRate} onChange={e => setFormData({...formData, generalExpensesRate: parseNumber(e.target.value)})} className={`w-7 text-right border-b border-gray-200 focus:outline-none text-purple-600 font-bold text-xs ${isLocked ? 'cursor-not-allowed' : ''}`} />
                                 <span className="text-[10px]">%</span>
                             </div>
                         </label>
@@ -342,7 +371,7 @@ const AnalysisEditorModal: React.FC<AnalysisEditorModalProps> = ({ isOpen, onClo
                         <label className="flex justify-between text-[9px] font-black uppercase text-gray-400 mb-0.5 tracking-widest">
                             <span>Utile d'Impresa</span>
                             <div className="flex items-center">
-                                <input readOnly={isLocked} type="number" value={formData.profitRate} onChange={e => setFormData({...formData, profitRate: parseFloat(e.target.value)})} className={`w-7 text-right border-b border-gray-200 focus:outline-none text-purple-600 font-bold text-xs ${isLocked ? 'cursor-not-allowed' : ''}`} />
+                                <input readOnly={isLocked} type="text" inputMode="decimal" value={formData.profitRate} onChange={e => setFormData({...formData, profitRate: parseNumber(e.target.value)})} className={`w-7 text-right border-b border-gray-200 focus:outline-none text-purple-600 font-bold text-xs ${isLocked ? 'cursor-not-allowed' : ''}`} />
                                 <span className="text-[10px]">%</span>
                             </div>
                         </label>

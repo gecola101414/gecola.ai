@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
-import { Lock, Calculator, AlertCircle, Loader2, UserCircle, ShieldAlert, CheckCircle2, Phone, Mail, Handshake, Users, Sparkles, Cpu, Activity, Zap, Layers } from 'lucide-react';
+import { Lock, Calculator, AlertCircle, Loader2, UserCircle, ShieldAlert, CheckCircle2, Phone, Mail, Handshake, Users, Sparkles, Cpu, Activity, Zap, Layers, PlayCircle, XCircle } from 'lucide-react';
 
 interface LoginProps {
   onVisitorLogin: () => void;
@@ -12,6 +12,69 @@ const Login: React.FC<LoginProps> = ({ onVisitorLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showVideo, setShowVideo] = useState(true);
+
+  useEffect(() => {
+    if (!showVideo) return;
+
+    let player: any;
+    let isMounted = true;
+
+    const initPlayer = () => {
+      if (!isMounted) return;
+      if (!document.getElementById('youtube-player')) {
+        setTimeout(initPlayer, 100);
+        return;
+      }
+      try {
+        player = new (window as any).YT.Player('youtube-player', {
+          videoId: 'HDHGyuyqeXw',
+          playerVars: {
+            autoplay: 1,
+            enablejsapi: 1,
+            rel: 0
+          },
+          events: {
+            'onReady': (event: any) => {
+              event.target.playVideo();
+            },
+            'onStateChange': (event: any) => {
+              if (event.data === 0) { // 0 = ended
+                setShowVideo(false);
+              }
+            }
+          }
+        });
+      } catch (e) {
+        console.error("Error initializing YouTube player", e);
+      }
+    };
+
+    if (!(window as any).YT) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      if (firstScriptTag && firstScriptTag.parentNode) {
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      } else {
+        document.head.appendChild(tag);
+      }
+      (window as any).onYouTubeIframeAPIReady = initPlayer;
+    } else if ((window as any).YT && (window as any).YT.Player) {
+      initPlayer();
+    }
+
+    return () => {
+      isMounted = false;
+      if (player && typeof player.destroy === 'function') {
+        try {
+          player.destroy();
+        } catch (e) {
+          console.error("Error destroying YouTube player", e);
+        }
+      }
+    };
+  }, [showVideo]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,43 +181,58 @@ const Login: React.FC<LoginProps> = ({ onVisitorLogin }) => {
 
           {/* AREA ANIMAZIONE AI - NEURAL DATA FLOW (SOSTITUISCE IMMAGINE) */}
           <div className="flex-1 relative bg-slate-950 overflow-hidden border-t border-slate-800">
-              {/* Background Grid */}
-              <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-              
-              {/* Animazione Nodi Pulsanti */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="relative">
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/10 blur-[100px] animate-pulse"></div>
-                      <Cpu className="w-32 h-32 text-blue-500/20 animate-spin-slow" />
-                      <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center">
-                          <Activity className="w-16 h-16 text-blue-400 animate-pulse" />
+              {showVideo ? (
+                  <div className="absolute inset-0 w-full h-full bg-black z-50 flex flex-col">
+                      <div className="flex justify-end p-2 absolute top-0 right-0 z-50">
+                          <button onClick={() => setShowVideo(false)} className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 shadow-lg transition-transform hover:scale-110">
+                              <XCircle className="w-6 h-6" />
+                          </button>
+                      </div>
+                      <div className="w-full h-full">
+                          <div id="youtube-player" className="w-full h-full"></div>
                       </div>
                   </div>
-              </div>
-
-              {/* Data Streams (Righi di computo che scorrono) */}
-              <div className="absolute top-0 left-10 bottom-0 w-64 opacity-30 select-none overflow-hidden flex flex-col justify-center gap-2 font-mono text-[8px] text-blue-400/50 italic">
-                  {[...Array(15)].map((_, i) => (
-                      <div key={i} className={`whitespace-nowrap animate-slide-left`} style={{ animationDelay: `${i * 0.5}s`, animationDuration: '10s' }}>
-                        WBS.{String(i+1).padStart(2,'0')} - ANALISI PREZZO UNITARIO - CALCOLO VOLUMI IN CORSO... 125,45 mc x 142,50 €
+              ) : (
+                  <>
+                      {/* Background Grid */}
+                      <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+                      
+                      {/* Animazione Nodi Pulsanti */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="relative">
+                              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/10 blur-[100px] animate-pulse"></div>
+                              <Cpu className="w-32 h-32 text-blue-500/20 animate-spin-slow" />
+                              <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center">
+                                  <Activity className="w-16 h-16 text-blue-400 animate-pulse" />
+                              </div>
+                          </div>
                       </div>
-                  ))}
-              </div>
 
-              {/* Scanning Laser Line */}
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent animate-scan z-10 shadow-[0_0_20px_rgba(59,130,246,0.5)]"></div>
+                      {/* Data Streams (Righi di computo che scorrono) */}
+                      <div className="absolute top-0 left-10 bottom-0 w-64 opacity-30 select-none overflow-hidden flex flex-col justify-center gap-2 font-mono text-[8px] text-blue-400/50 italic">
+                          {[...Array(15)].map((_, i) => (
+                              <div key={i} className={`whitespace-nowrap animate-slide-left`} style={{ animationDelay: `${i * 0.5}s`, animationDuration: '10s' }}>
+                                WBS.{String(i+1).padStart(2,'0')} - ANALISI PREZZO UNITARIO - CALCOLO VOLUMI IN CORSO... 125,45 mc x 142,50 €
+                              </div>
+                          ))}
+                      </div>
 
-              {/* Badge Informativo in basso */}
-              <div className="absolute bottom-8 left-10 z-20 space-y-3">
-                 <div className="inline-flex items-center gap-2 bg-blue-600 px-4 py-1.5 rounded-full border border-blue-400 shadow-2xl animate-in slide-in-from-bottom-4">
-                    <Sparkles className="w-3 h-3 text-yellow-300" />
-                    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white">GeCoLa AI Engine Active</span>
-                 </div>
-                 <h2 className="text-3xl font-black text-white italic tracking-tighter leading-none drop-shadow-2xl">
-                    L'intelligenza al servizio<br/>
-                    <span className="text-blue-400">del computo moderno.</span>
-                 </h2>
-              </div>
+                      {/* Scanning Laser Line */}
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent animate-scan z-10 shadow-[0_0_20px_rgba(59,130,246,0.5)]"></div>
+
+                      {/* Badge Informativo in basso */}
+                      <div className="absolute bottom-8 left-10 z-20 space-y-3">
+                         <div className="inline-flex items-center gap-2 bg-blue-600 px-4 py-1.5 rounded-full border border-blue-400 shadow-2xl animate-in slide-in-from-bottom-4">
+                            <Sparkles className="w-3 h-3 text-yellow-300" />
+                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white">GeCoLa AI Engine Active</span>
+                         </div>
+                         <h2 className="text-3xl font-black text-white italic tracking-tighter leading-none drop-shadow-2xl">
+                            L'intelligenza al servizio<br/>
+                            <span className="text-blue-400">del computo moderno.</span>
+                         </h2>
+                      </div>
+                  </>
+              )}
           </div>
         </div>
 
@@ -200,6 +278,17 @@ const Login: React.FC<LoginProps> = ({ onVisitorLogin }) => {
 
                 {/* PULSANTE VISITATORE - POSIZIONATO PER EVITARE SCROLL */}
                 <div className="mt-auto pt-4 flex flex-col items-center">
+                    <button
+                        type="button"
+                        onClick={() => setShowVideo(true)}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3 px-4 rounded-[1.8rem] shadow-lg transform transition-all active:scale-95 flex flex-col items-center justify-center gap-1 mb-3 group"
+                    >
+                        <div className="flex items-center gap-2">
+                            <PlayCircle className="w-5 h-5 text-white" /> 
+                            <span className="text-[11px] uppercase tracking-widest">Guarda Spot 2026</span>
+                        </div>
+                    </button>
+
                     <button
                         type="button"
                         onClick={onVisitorLogin}

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { parseNumber } from '../utils';
 import { X, Save, Paintbrush, Layers, Info, Square, Layout, ArrowRight, Maximize2, MousePointer2 } from 'lucide-react';
 
 interface PaintingCalculatorModalProps {
@@ -29,7 +30,7 @@ const BufferedInput = ({ value, onChange, label, tabIndex, autoFocus = false }: 
   }, [value]);
 
   const commit = () => {
-    const num = parseFloat(localVal);
+    const num = parseNumber(localVal);
     if (!isNaN(num)) onChange(num);
     else if (localVal === '') onChange(0);
     else setLocalVal(value === 0 ? '' : value.toString());
@@ -39,8 +40,8 @@ const BufferedInput = ({ value, onChange, label, tabIndex, autoFocus = false }: 
     <div className="flex flex-col items-center">
       <span className="text-[7px] font-black text-slate-400 uppercase mb-0.5">{label}</span>
       <input 
-        type="number"
-        step="0.01"
+        type="text"
+        inputMode="decimal"
         autoFocus={autoFocus}
         tabIndex={tabIndex}
         value={localVal}

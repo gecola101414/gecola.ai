@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Save, Ruler, Grid3X3, Weight, Construction, Hash, Info, Layers, Plus, Trash2, ChevronRight, ListChecks } from 'lucide-react';
+import { parseNumber } from '../utils';
 import { REBAR_WEIGHTS } from '../constants';
 
 interface RebarRow {
@@ -182,11 +183,11 @@ const RebarCalculatorModal: React.FC<RebarCalculatorModalProps> = ({ isOpen, onC
                         </div>
                         <div className="space-y-1.5">
                             <span className="text-[8px] font-black text-slate-400 uppercase">Pezzi</span>
-                            <input type="number" value={multiplier || ''} onChange={e => setMultiplier(parseFloat(e.target.value) || 0)} className="w-full bg-white/10 border-none rounded-lg px-3 py-2 text-white font-mono font-black outline-none focus:ring-1 focus:ring-orange-500 text-sm" placeholder="10" />
+                            <input type="text" inputMode="decimal" value={multiplier || ''} onChange={e => setMultiplier(parseNumber(e.target.value) || 0)} className="w-full bg-white/10 border-none rounded-lg px-3 py-2 text-white font-mono font-black outline-none focus:ring-1 focus:ring-orange-500 text-sm" placeholder="10" />
                         </div>
                         <div className="space-y-1.5">
                             <span className="text-[8px] font-black text-slate-400 uppercase">Lung. (m)</span>
-                            <input type="number" step="0.01" value={length || ''} onChange={e => setLength(parseFloat(e.target.value) || 0)} className="w-full bg-white/10 border-none rounded-lg px-3 py-2 text-white font-mono font-black outline-none focus:ring-1 focus:ring-orange-500 text-sm" placeholder="1.50" />
+                            <input type="text" inputMode="decimal" value={length || ''} onChange={e => setLength(parseNumber(e.target.value) || 0)} className="w-full bg-white/10 border-none rounded-lg px-3 py-2 text-white font-mono font-black outline-none focus:ring-1 focus:ring-orange-500 text-sm" placeholder="1.50" />
                         </div>
                         <div className="space-y-1.5">
                             <span className="text-[8px] font-black text-slate-400 uppercase">Nota (opz.)</span>

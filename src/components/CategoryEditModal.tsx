@@ -7,6 +7,7 @@ import {
 import React, { useState, useEffect, useMemo } from 'react';
 import { Category } from '../types';
 import { VIVID_COLORS, WBS_SUGGESTIONS, SOA_CATEGORIES } from '../constants';
+import { cleanDescription } from '../services/geminiService';
 
 interface CategoryEditModalProps {
   isOpen: boolean;
@@ -71,7 +72,7 @@ const CategoryEditModal: React.FC<CategoryEditModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      onSave(name, isSuperMode, isSuperMode ? selectedColor : '', selectedSoa);
+      onSave(cleanDescription(name), isSuperMode, isSuperMode ? selectedColor : '', selectedSoa);
       onClose();
     }
   };

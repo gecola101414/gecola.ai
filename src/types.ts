@@ -1,88 +1,104 @@
-export interface CompanyInfo {
+
+export interface Category {
+  id: string; 
+  code: string;
   name: string;
-  address: string;
-  vat: string;
-  phone: string;
-  email: string;
+  isLocked?: boolean;
+  isEnabled?: boolean;
+  isImported?: boolean;
+  isSuperCategory?: boolean; 
+  type?: 'work' | 'safety'; 
+  parentId?: string; 
+  color?: string; 
+  soaCategory?: string; 
 }
 
-export interface PlanMarker {
+export interface Measurement {
   id: string;
-  x: number;
-  y: number;
-  rotation: number;
-  facadeId: string;
-  label: string;
+  description: string;
+  type: 'positive' | 'deduction' | 'subtotal';
+  length?: number;
+  width?: number;
+  height?: number;
+  multiplier?: number;
+  linkedArticleId?: string;
+  linkedType?: 'quantity' | 'amount';
 }
 
-export interface SiteInfo {
-  address: string;
+export interface Article {
+  id: string;
+  categoryCode: string;
+  code: string;
+  priceListSource?: string;
+  description: string;
+  unit: string;
+  unitPrice: number;
+  laborRate: number;
+  measurements: Measurement[];
+  quantity: number;
+  linkedAnalysisId?: string;
+  isLocked?: boolean;
+  displayMode?: number; 
+  soaCategory?: string; 
+  groundingUrls?: any[];
+}
+
+export interface AnalysisComponent {
+  id: string;
+  type: 'material' | 'labor' | 'equipment' | 'general';
+  description: string;
+  unit: string;
+  unitPrice: number;
+  quantity: number;
+}
+
+export interface PriceAnalysis {
+  id: string;
+  code: string;
+  description: string;
+  unit: string;
+  analysisQuantity: number;
+  components: AnalysisComponent[];
+  generalExpensesRate: number;
+  profitRate: number;
+  isLocked?: boolean;
+  totalMaterials: number;
+  totalLabor: number;
+  totalEquipment: number;
+  costoTecnico: number;
+  valoreSpese: number;
+  valoreUtile: number;
+  totalBatchValue: number;
+  totalUnitPrice: number;
+}
+
+export interface ProjectInfo {
+  title: string;
   client: string;
-  manager: string;
-  startDate: string;
-  employer: string; // Datore di lavoro
-  employerAddress: string;
-  employerTaxCode: string;
-  sitePlan?: string;
-  planMarkers?: PlanMarker[];
+  designer: string;
+  location: string;
+  date: string;
+  priceList: string; 
+  region: string;
+  year: string;
+  vatRate: number;
+  safetyRate: number;
+  fontSizeTitle?: number; 
+  fontSizeClient?: number;
+  fontSizeTotals?: number;
+  tariffColumnWidth?: number;
+  fontSizeMeasurements?: number;
+  fontSizeWbsSidebar?: number;
+  showLaborIncidenceInSummary?: boolean;
+  descriptionLength?: 'full' | 'short';
 }
 
-export interface AnchorPoint {
-  id: string;
-  x: number;
-  y: number;
-  type: string;
-}
-
-export interface ScaffoldingSpec {
-  type: string; // e.g., Telai prefabbricati, Tubo e giunto
-  brand: string;
-  model: string;
-  maxHeight: number;
-  moduleWidth: number;
-  moduleHeight: number;
-  specialPieces: string;
-  hasShadingNet: boolean;
-  hasNightLights: boolean;
-  preposto: string;
-  facades: FacadeInfo[];
-  soilType: string;
-  baseElements: string;
-  earthingSystem: string;
-  signage: string[];
-}
-
-export interface ErasedPath {
-  points: number[];
-  strokeWidth: number;
-}
-
-export interface FacadeInfo {
-  id: string;
-  name: string;
-  width: number;
-  height: number;
-  photo?: string;
-  overlayPhoto?: string;
-  anchors: AnchorPoint[];
-  erasedPaths?: ErasedPath[];
-  overlayConfig?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    opacity: number;
-    stageWidth: number;
-    stageHeight: number;
-  };
-}
-
-export interface PiMUSData {
-  id: string;
-  createdAt: string;
-  company: CompanyInfo;
-  site: SiteInfo;
-  team: string[];
-  scaffolding: ScaffoldingSpec;
-  safetyProcedures: string;
+export interface Totals {
+  totalWorks: number;
+  totalLabor: number;
+  safetyCosts: number;
+  totalSafetyProgettuale: number;
+  totalTaxable: number;
+  vatAmount: number;
+  grandTotal: number;
 }

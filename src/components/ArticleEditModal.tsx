@@ -4,6 +4,7 @@ import { X, Save, Edit3, ArrowRightLeft, TestTubes, Award, Sparkles, Download } 
 import { Article } from '../types';
 import { COMMON_UNITS, SOA_CATEGORIES } from '../constants';
 import { parseDroppedContent, cleanDescription } from '../services/geminiService';
+import { parseNumber } from '../utils';
 
 interface ArticleEditModalProps {
   isOpen: boolean;
@@ -34,11 +35,39 @@ const ArticleEditModal: React.FC<ArticleEditModalProps> = ({ isOpen, onClose, ar
     }
   }, [isOpen, article]);
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        // Trigger save
+        const form = document.getElementById('edit-article-form') as HTMLFormElement;
+        if (form) form.requestSubmit();
+        return;
+    }
+
+    if (['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) {
+      e.preventDefault();
+      const inputs = Array.from(document.querySelectorAll('.modal-content input, .modal-content select, .modal-content textarea'));
+      const index = inputs.indexOf(e.target as HTMLElement);
+      
+      if (e.key === 'Enter' || e.key === 'ArrowDown') {
+        if (index < inputs.length - 1) (inputs[index + 1] as HTMLElement).focus();
+      } else if (e.key === 'ArrowUp') {
+        if (index > 0) (inputs[index - 1] as HTMLElement).focus();
+      }
+    }
+  }
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(article.id, formData);
+    const cleanedData: Partial<Article> = { ...formData };
+    if (cleanedData.description) cleanedData.description = cleanDescription(cleanedData.description);
+    if (cleanedData.code) cleanedData.code = cleanDescription(cleanedData.code);
+    if (cleanedData.unit) cleanedData.unit = cleanDescription(cleanedData.unit);
+    if (cleanedData.priceListSource) cleanedData.priceListSource = cleanDescription(cleanedData.priceListSource);
+    
+    onSave(article.id, cleanedData);
     onClose();
   };
 
@@ -88,7 +117,7 @@ const ArticleEditModal: React.FC<ArticleEditModalProps> = ({ isOpen, onClose, ar
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-300 flex flex-col max-h-[90vh]">
+      <div className="modal-content bg-white rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-300 flex flex-col max-h-[90vh]" onKeyDown={handleKeyDown}>
         <div className="bg-slate-700 px-5 py-3 flex justify-between items-center border-b border-gray-600 flex-shrink-0">
           <h3 className="text-white font-semibold flex items-center gap-2">
             <Edit3 className="w-4 h-4 text-slate-300" />
@@ -189,10 +218,10 @@ const ArticleEditModal: React.FC<ArticleEditModalProps> = ({ isOpen, onClose, ar
               <div className="col-span-1">
                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Prezzo Unit. (€)</label>
                 <input 
-                  type="number" 
-                  step="0.01"
+                  type="text" 
+                  inputMode="decimal"
                   value={formData.unitPrice || 0}
-                  onChange={(e) => setFormData({...formData, unitPrice: parseFloat(e.target.value)})}
+                  onChange={(e) => setFormData({...formData, unitPrice: parseNumber(e.target.value)})}
                   className="w-full border border-gray-300 rounded p-2 focus:ring-1 focus:ring-blue-500 outline-none text-right font-mono"
                 />
               </div>
@@ -200,10 +229,10 @@ const ArticleEditModal: React.FC<ArticleEditModalProps> = ({ isOpen, onClose, ar
               <div className="col-span-1">
                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Inc. Manodopera (%)</label>
                 <input 
-                  type="number" 
-                  step="0.01"
+                  type="text" 
+                  inputMode="decimal"
                   value={formData.laborRate || 0}
-                  onChange={(e) => setFormData({...formData, laborRate: parseFloat(e.target.value)})}
+                  onChange={(e) => setFormData({...formData, laborRate: parseNumber(e.target.value)})}
                   className="w-full border border-gray-300 rounded p-2 focus:ring-1 focus:ring-blue-500 outline-none text-right font-mono"
                 />
               </div>

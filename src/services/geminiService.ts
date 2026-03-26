@@ -34,13 +34,16 @@ export const generateBulkItems = async (
   try {
     const ai = getAi();
     const categoriesList = availableCategories.map(c => `${c.code}: ${c.name}`).join("\n");
-    const bulkPrompt = `Act as an expert Italian Quantity Surveyor.
+    const bulkPrompt = `Agisci come un esperto di computo metrico e project management per il progetto 'Gecola'.
     PROJECT CONTEXT: ${userDescription}
     REGION/YEAR: ${region} ${year}
     
-    TASK: Break down the project into work items mapped strictly to these categories:
+    TASK: Elabora i dati complessi e sviluppa una strategia per suddividere il progetto in voci di computo, mappandole rigorosamente a queste categorie:
     ${categoriesList}
 
+    OBIETTIVI: Massima precisione tecnica e conformità agli standard italiani.
+    RISULTATI ATTESI: Un elenco strutturato di voci di lavoro.
+    
     Return ONLY a JSON object with an array "items".`;
 
     const response = await ai.models.generateContent({
@@ -200,26 +203,30 @@ export const analyzeProject = async (
 ): Promise<{ text: string; functionCalls?: any[] }> => {
   try {
     const ai = getAi();
-    const analyzePrompt = `Act as an expert Italian Quantity Surveyor and Project Manager Agent.
+    const analyzePrompt = `Agisci come un esperto di computo metrico e project management per il progetto 'Gecola'.
     PROJECT CONTEXT (JSON):
     ${projectData}
     
     USER REQUEST:
     ${question}
     
-    TASK: Provide a detailed, professional response. 
-    If the user asks for a document, report, or attachment (PDF/Excel), use the 'generate_document' tool.
+    TASK: Elabora i dati complessi, sviluppa strategie e fornisci una risposta dettagliata e professionale.
+    Se l'utente richiede documentazione, report o allegati (PDF/Excel), utilizza lo strumento 'generate_document'.
+    
+    OBIETTIVI:
+    1. Fornire analisi di alta qualità.
+    2. Definire passaggi chiave e risultati attesi per le richieste dell'utente.
+    3. Essere proattivi: se noti errori o ottimizzazioni, suggeriscili e offri di creare un report.
     
     FORMATTING RULES:
-    1. Use Markdown for structure.
-    2. Be proactive: if you see errors or optimizations, suggest them and offer to create a report.
-    3. Your goal is to be a real Project Manager, not just a chatbot.`;
+    1. Usa Markdown per la struttura.
+    2. Il tuo obiettivo è essere un Project Manager esperto, non solo un chatbot.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
       contents: analyzePrompt,
       config: {
-        systemInstruction: "You are a professional construction project manager agent. You can generate technical documents and reports. Focus on technical accuracy and Italian standards.",
+        systemInstruction: "Sei un esperto di computo metrico e project management per il progetto 'Gecola'. Sei in grado di elaborare dati complessi, sviluppare strategie e restituire documentazione di alta qualità, inclusi file PDF. Definisci obiettivi specifici, i passaggi chiave e i risultati attesi. Focus sulla precisione tecnica e sugli standard italiani.",
         tools: [{
           functionDeclarations: [{
             name: "generate_document",
